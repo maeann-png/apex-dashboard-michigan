@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Chill Medicated · Sales Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root{
+    --bg:#13140d; --bg-elev:#1c1d14; --bg-elev-2:#25271a; --border:#383b22; --border-soft:#272a18;
+    --text:#f0f2e6; --text-dim:#a8ad8f; --text-faint:#6b7050;
+    --accent:#e8d838; --accent-dim:#b0a528; --accent-deep:#8a7d18;
+    --warm:#f0a868; --cool:#8fb8d4; --rose:#e07594;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:14px;line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased}
+  body{background-image:radial-gradient(ellipse 1200px 600px at 80% -10%,rgba(232,216,56,0.05),transparent 60%),radial-gradient(ellipse 800px 400px at 0% 100%,rgba(124,133,18,0.05),transparent 60%)}
+  .font-display{font-family:'Fraunces',serif;font-variation-settings:"opsz" 144;letter-spacing:-0.02em}
+  .font-mono{font-family:'JetBrains Mono',monospace}
+  .tabular{font-variant-numeric:tabular-nums}
+  .app{max-width:1600px;margin:0 auto;padding:32px 40px 80px}
+  .topbar{display:flex;align-items:flex-end;justify-content:space-between;padding-bottom:28px;border-bottom:1px solid var(--border);margin-bottom:36px}
+  .brand-name{font-family:'Fraunces',serif;font-weight:500;font-size:28px;letter-spacing:-0.02em;color:var(--text)}
+  .brand-tag{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.18em;color:var(--text-faint)}
+  .topbar-meta{display:flex;gap:24px;align-items:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dim)}
+  .topbar-meta strong{color:var(--text);font-weight:500}
+  .pulse{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .filters{display:flex;gap:16px;flex-wrap:wrap;padding:16px 20px;background:var(--bg-elev);border:1px solid var(--border);border-radius:4px;margin-bottom:32px}
+  .filter-group{display:flex;flex-direction:column;gap:6px;min-width:140px}
+  .filter-label{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--text-faint)}
+  .filter-input,.filter-select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 10px;font-family:'Inter',sans-serif;font-size:13px;border-radius:2px;outline:none;transition:border-color .15s}
+  .filter-input:focus,.filter-select:focus{border-color:var(--accent-dim)}
+  .filter-reset{background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:8px 14px;font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;border-radius:2px;cursor:pointer;align-self:flex-end;transition:all .15s}
+  .filter-reset:hover{color:var(--text);border-color:var(--text-dim)}
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:36px}
+  .kpi{background:var(--bg-elev);padding:24px 22px;display:flex;flex-direction:column;gap:6px;position:relative;transition:background .2s}
+  .kpi:hover{background:var(--bg-elev-2)}
+  .kpi-label{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.14em;color:var(--text-faint)}
+  .kpi-value{font-family:'Fraunces',serif;font-weight:400;font-size:34px;line-height:1.1;letter-spacing:-0.02em;color:var(--text);font-variant-numeric:tabular-nums}
+  .kpi-sub{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dim);margin-top:2px}
+  .kpi-accent .kpi-value{color:var(--accent)}
+  .kpi::before{content:'';position:absolute;top:0;left:0;width:24px;height:1px;background:var(--accent);opacity:0;transition:opacity .2s}
+  .kpi:hover::before{opacity:1}
+  .section{margin-bottom:36px}
+  .section-header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px}
+  .section-title{font-family:'Fraunces',serif;font-weight:500;font-size:20px;letter-spacing:-0.01em}
+  .section-title em{color:var(--text-dim);font-style:italic;font-weight:400}
+  .section-meta{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.12em}
+  .card{background:var(--bg-elev);border:1px solid var(--border);border-radius:4px;padding:24px}
+  .grid-2{display:grid;grid-template-columns:2fr 1fr;gap:24px}
+  .grid-half{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  .rank-list{display:flex;flex-direction:column}
+  .rank-row{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border-soft);position:relative}
+  .rank-row:last-child{border-bottom:none}
+  .rank-num{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-faint);font-variant-numeric:tabular-nums}
+  .rank-name{font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rank-value{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text);font-variant-numeric:tabular-nums;font-weight:500}
+  .rank-bar{position:absolute;bottom:0;left:38px;right:0;height:1px;background:var(--accent-dim);opacity:.4}
+  .data-table{width:100%;border-collapse:collapse;font-size:12px}
+  .data-table th{text-align:left;padding:12px 16px;border-bottom:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--text-faint);font-weight:500;background:var(--bg-elev-2)}
+  .data-table td{padding:12px 16px;border-bottom:1px solid var(--border-soft);color:var(--text)}
+  .data-table tr:hover td{background:rgba(232,216,56,0.03)}
+  .data-table .num{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;text-align:right}
+  .data-table .dim{color:var(--text-dim)}
+  .empty{text-align:center;padding:80px 20px;color:var(--text-dim)}
+  .empty h2{font-family:'Fraunces',serif;font-weight:400;font-style:italic;font-size:28px;margin-bottom:12px;color:var(--text)}
+  .empty code{display:inline-block;background:var(--bg-elev);border:1px solid var(--border);padding:4px 10px;font-family:'JetBrains Mono',monospace;font-size:12px;border-radius:2px;color:var(--accent);margin:0 2px}
+  .pill{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;padding:3px 8px;border-radius:2px;border:1px solid}
+  .pill-paid{color:var(--accent);border-color:var(--accent-dim);background:rgba(232,216,56,0.06)}
+  .pill-unpaid{color:var(--cool);border-color:var(--cool);background:rgba(143,184,212,0.06)}
+  .pill-overdue{color:var(--rose);border-color:var(--rose);background:rgba(224,117,148,0.06)}
+  @media (max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.grid-2,.grid-half{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+if (typeof Recharts === 'undefined') {
+  document.getElementById('root').innerHTML =
+    '<div style="max-width:600px;margin:80px auto;padding:32px;color:#f0f2e6;font-family:sans-serif">'+
+    '<h2 style="font-family:Fraunces,serif;font-style:italic">Charts library didn\u2019t load</h2>'+
+    '<p style="color:#a8ad8f">Recharts failed to load from the CDN \u2014 a blocker or offline network is the usual cause. Refresh, or allow jsdelivr.net / unpkg.com.</p></div>';
+  throw new Error('Recharts failed to load');
+}
+const { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell } = Recharts;
+
+const fmtMoney = (n) => {
+  if (n == null || isNaN(n)) return '\u2014';
+  if (Math.abs(n) >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M';
+  if (Math.abs(n) >= 1e3) return '$' + (n/1e3).toFixed(1) + 'K';
+  return '$' + n.toLocaleString(undefined,{maximumFractionDigits:0});
+};
+const fmtMoneyFull = (n) => '$' + (n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtNum = (n) => (n||0).toLocaleString();
+const parseDate = (s) => {
+  if (!s) return null;
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+  const d = new Date(s); return isNaN(d) ? null : d;
+};
+const ymd = (d) => { if(!(d instanceof Date)||isNaN(d)) return ''; const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${d.getFullYear()}-${m}-${dd}`; };
+
+function App(){
+  const [data,setData]=useState(null);
+  const [error,setError]=useState(null);
+  const [filters,setFilters]=useState({from:'',to:'',buyer:'',productLine:'',status:'',invoice:'',excludeSamples:false,cogsRatio:0.45});
+  useEffect(()=>{
+    const load=()=>fetch('sales_data.json?t='+Date.now())
+      .then(r=>{if(!r.ok)throw new Error('Could not load sales_data.json');return r.json();})
+      .then(setData).catch(e=>setError(e.message));
+    load(); const id=setInterval(load,60000); return ()=>clearInterval(id);
+  },[]);
+  if(error) return <div className="app"><div className="empty"><h2>No data yet</h2><p>Run the scraper to generate <code>sales_data.json</code>, then refresh.</p><p style={{marginTop:12,fontSize:12,color:'var(--text-faint)'}}>{error}</p></div></div>;
+  if(!data) return <div className="app"><div className="empty"><h2>Loading\u2026</h2></div></div>;
+  return <Dashboard data={data} filters={filters} setFilters={setFilters} />;
+}
+
+function Dashboard({data,filters,setFilters}){
+  const rows = data.rows || [];
+  const normalized = useMemo(()=>rows.map(r=>({
+    ...r,
+    _date: parseDate(r.order_date),
+    _revenue: +r.revenue || 0,
+    _gross: +r.gross || 0,
+    _discount: +r.discount || 0,
+    _units: +r.units_sold || 0,
+    _qty: +r.quantity || 0,
+    _isSample: !!r.is_sample,
+    productLine: r.product_line || r.product_type || '\u2014',
+  })),[rows]);
+
+  const distinct = useMemo(()=>({
+    buyers:[...new Set(normalized.map(r=>r.buyer_name).filter(Boolean))].sort(),
+    productLines:[...new Set(normalized.map(r=>r.productLine).filter(Boolean))].sort(),
+    statuses:[...new Set(normalized.map(r=>r.payment_status).filter(Boolean))].sort(),
+  }),[normalized]);
+
+  const filtered = useMemo(()=>normalized.filter(r=>{
+    if(filters.from||filters.to){ if(!r._date) return false; const k=ymd(r._date);
+      if(filters.from&&k<filters.from) return false; if(filters.to&&k>filters.to) return false; }
+    if(filters.buyer && r.buyer_name!==filters.buyer) return false;
+    if(filters.productLine && r.productLine!==filters.productLine) return false;
+    if(filters.status && r.payment_status!==filters.status) return false;
+    if(filters.excludeSamples && r._isSample) return false;
+    if(filters.invoice){ const q=filters.invoice.toLowerCase();
+      if(!String(r.order_number||'').toLowerCase().includes(q)) return false; }
+    return true;
+  }),[normalized,filters]);
+
+  const kpis = useMemo(()=>{
+    const revenue=filtered.reduce((s,r)=>s+r._revenue,0);
+    const gross=filtered.reduce((s,r)=>s+r._gross,0);
+    const discounts=filtered.reduce((s,r)=>s+r._discount,0);
+    const units=filtered.reduce((s,r)=>s+r._units,0);
+    const orders=new Set(filtered.map(r=>r.order_uid).filter(Boolean));
+    const buyers=new Set(filtered.map(r=>r.buyer_name).filter(Boolean));
+    const cost=revenue*filters.cogsRatio;
+    const margin=revenue?((revenue-cost)/revenue)*100:0;
+    const byMonth={}; filtered.forEach(r=>{if(!r._date)return;const k=`${r._date.getFullYear()}-${String(r._date.getMonth()+1).padStart(2,'0')}`;byMonth[k]=(byMonth[k]||0)+r._revenue;});
+    const mk=Object.keys(byMonth).sort(); let mom=null,momLabel='\u2014';
+    if(mk.length>=2){const a=byMonth[mk[mk.length-1]],b=byMonth[mk[mk.length-2]];if(b){mom=((a-b)/b)*100;momLabel=mk[mk.length-1]+' vs '+mk[mk.length-2];}}
+    return {revenue,gross,discounts,units,cost,margin,netProfit:revenue-cost,
+      orders:orders.size,buyers:buyers.size,avgOrder:orders.size?revenue/orders.size:0,
+      avgUnitPrice:units?revenue/units:0,avgUnitsPerInvoice:orders.size?units/orders.size:0,
+      mom,momLabel,lineItems:filtered.length};
+  },[filtered,filters.cogsRatio]);
+
+  const timeSeries=useMemo(()=>{const m={};filtered.forEach(r=>{if(!r._date)return;const k=ymd(r._date);if(!m[k])m[k]={date:k,revenue:0};m[k].revenue+=r._revenue;});return Object.values(m).sort((a,b)=>a.date.localeCompare(b.date));},[filtered]);
+  const groupSum=(key,n=10)=>{const m={};filtered.forEach(r=>{const k=r[key];if(!k)return;if(!m[k])m[k]={name:k,revenue:0,units:0};m[k].revenue+=r._revenue;m[k].units+=r._units;});return Object.values(m).sort((a,b)=>b.revenue-a.revenue).slice(0,n);};
+  const topProducts=useMemo(()=>groupSum('product_name'),[filtered]);
+  const topBuyers=useMemo(()=>groupSum('buyer_name'),[filtered]);
+  const byLine=useMemo(()=>groupSum('productLine',8),[filtered]);
+  const paymentMix=useMemo(()=>{const m={};filtered.forEach(r=>{const k=r.payment_status||'Unknown';m[k]=(m[k]||0)+r._revenue;});return Object.entries(m).map(([name,revenue])=>({name,revenue}));},[filtered]);
+
+  const monthly=useMemo(()=>{
+    const m={};filtered.forEach(r=>{if(!r._date)return;const k=`${r._date.getFullYear()}-${String(r._date.getMonth()+1).padStart(2,'0')}`;
+      if(!m[k])m[k]={key:k,monthName:r._date.toLocaleString('en-US',{month:'long',year:'numeric'}),units:0,gross:0,discount:0,net:0};
+      m[k].units+=r._units;m[k].gross+=r._gross;m[k].discount+=r._discount;m[k].net+=r._revenue;});
+    const s=Object.values(m).sort((a,b)=>a.key.localeCompare(b.key));
+    return s.map((x,i)=>{const prev=i>0?s[i-1].net:0;const mom=prev?((x.net-prev)/prev)*100:null;const cogs=x.net*filters.cogsRatio;return {...x,mom,cogs,netProfit:x.net-cogs,margin:x.net?((x.net-cogs)/x.net)*100:0};});
+  },[filtered,filters.cogsRatio]);
+
+  const products=useMemo(()=>{
+    const m={};filtered.forEach(r=>{const k=r.product_name;if(!k)return;
+      if(!m[k])m[k]={name:k,line:r.productLine,units:0,gross:0,discount:0,net:0};
+      m[k].units+=r._units;m[k].gross+=r._gross;m[k].discount+=r._discount;m[k].net+=r._revenue;});
+    return Object.values(m).map(p=>({...p,avgUnit:p.units?p.net/p.units:0})).sort((a,b)=>b.net-a.net);
+  },[filtered]);
+
+  const invoices=useMemo(()=>{
+    const m={};filtered.forEach(r=>{const id=r.order_uid||r.order_number;if(!id)return;
+      if(!m[id])m[id]={id,invoice:r.order_number,date:r.order_date,_date:r._date,buyer:r.buyer_name||'\u2014',status:r.payment_status||'Unknown',lines:0,units:0,gross:0,discount:0,net:0};
+      m[id].lines++;m[id].units+=r._units;m[id].gross+=r._gross;m[id].discount+=r._discount;m[id].net+=r._revenue;});
+    return Object.values(m).sort((a,b)=>(b._date?.getTime()||0)-(a._date?.getTime()||0));
+  },[filtered]);
+
+  const reset=()=>setFilters({from:'',to:'',buyer:'',productLine:'',status:'',invoice:'',excludeSamples:false,cogsRatio:0.45});
+  const fetchedAt=new Date(data.fetched_at);
+
+  return (<div className="app">
+    <Topbar fetchedAt={fetchedAt} rowCount={filtered.length} totalCount={rows.length} data={data}/>
+    <FilterBar filters={filters} setFilters={setFilters} distinct={distinct} onReset={reset}/>
+
+    <div className="kpi-grid">
+      <Kpi label="Net Revenue" value={fmtMoney(kpis.revenue)} sub={`${fmtNum(kpis.lineItems)} line items`} accent/>
+      <Kpi label="Gross Sales" value={fmtMoney(kpis.gross)} sub="before discounts"/>
+      <Kpi label="Discounts" value={fmtMoney(kpis.discounts)} sub={kpis.gross?((kpis.discounts/kpis.gross)*100).toFixed(1)+'% of gross':'\u2014'}/>
+      <Kpi label="MOM Change" value={kpis.mom==null?'\u2014':(kpis.mom>=0?'+':'')+kpis.mom.toFixed(1)+'%'} sub={kpis.momLabel}/>
+    </div>
+    <div className="kpi-grid">
+      <Kpi label="Orders" value={fmtNum(kpis.orders)} sub={`${fmtMoney(kpis.avgOrder)} avg order`}/>
+      <Kpi label="Units Sold" value={fmtNum(Math.round(kpis.units))} sub={`${kpis.avgUnitsPerInvoice.toFixed(1)} per order`}/>
+      <Kpi label="Active Buyers" value={fmtNum(kpis.buyers)} sub="unique accounts"/>
+      <Kpi label="Net Profit *" value={fmtMoney(kpis.netProfit)} sub={`modeled \u00b7 ${(filters.cogsRatio*100).toFixed(0)}% COGS \u00b7 ${kpis.margin.toFixed(1)}% margin`}/>
+    </div>
+
+    <section className="section">
+      <div className="section-header"><h2 className="section-title">Revenue <em>over time</em></h2><span className="section-meta">{timeSeries.length} days</span></div>
+      <div className="card" style={{height:320}}>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={timeSeries} margin={{top:12,right:12,left:0,bottom:0}}>
+            <defs><linearGradient id="rg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#e8d838" stopOpacity={0.4}/><stop offset="100%" stopColor="#e8d838" stopOpacity={0}/></linearGradient></defs>
+            <CartesianGrid stroke="#383b22" strokeDasharray="2 2" vertical={false}/>
+            <XAxis dataKey="date" stroke="#6b7050" tick={{fontSize:11,fontFamily:'JetBrains Mono'}} tickLine={false} axisLine={{stroke:'#383b22'}}/>
+            <YAxis stroke="#6b7050" tick={{fontSize:11,fontFamily:'JetBrains Mono'}} tickLine={false} axisLine={false} tickFormatter={fmtMoney}/>
+            <Tooltip contentStyle={{background:'#1c1d14',border:'1px solid #383b22',borderRadius:4,fontSize:12}} labelStyle={{color:'#a8ad8f',fontFamily:'JetBrains Mono',fontSize:11}} formatter={(v)=>[fmtMoneyFull(v),'Net Revenue']}/>
+            <Area type="monotone" dataKey="revenue" stroke="#e8d838" strokeWidth={2} fill="url(#rg)"/>
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
+
+    <section className="section"><div className="grid-half">
+      <RankCard title="Top products" data={topProducts}/>
+      <RankCard title="Top buyers" data={topBuyers}/>
+    </div></section>
+
+    <section className="section"><div className="grid-2">
+      <div>
+        <div className="section-header"><h2 className="section-title">By <em>product line</em></h2><span className="section-meta">{byLine.length} lines</span></div>
+        <div className="card"><RankList data={byLine}/></div>
+      </div>
+      <div>
+        <div className="section-header"><h2 className="section-title">Payment <em>status</em></h2><span className="section-meta">AR mix</span></div>
+        <div className="card" style={{height:300,display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={paymentMix} dataKey="revenue" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={95} paddingAngle={2} stroke="#13140d" strokeWidth={2}>
+                {paymentMix.map((e,i)=>{const c={'Paid':'#e8d838','Unpaid':'#8fb8d4','Overdue':'#e07594'};return <Cell key={i} fill={c[e.name]||'#8fb8d4'}/>;})}
+              </Pie>
+              <Tooltip contentStyle={{background:'#1c1d14',border:'1px solid #383b22',borderRadius:4,fontSize:12}} formatter={(v)=>fmtMoneyFull(v)}/>
+              <Legend verticalAlign="bottom" iconType="square" wrapperStyle={{fontSize:11,fontFamily:'JetBrains Mono',color:'#a8ad8f'}}/>
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div></section>
+
+    <section className="section">
+      <div className="section-header"><h2 className="section-title">Monthly <em>breakdown</em></h2><span className="section-meta">{monthly.length} months</span></div>
+      <div className="card" style={{padding:0,overflow:'hidden'}}><div style={{overflowX:'auto'}}>
+        <table className="data-table"><thead><tr>
+          <th>Month</th><th className="num">Units</th><th className="num">Gross</th><th className="num">Discounts</th><th className="num">Net Sales</th><th className="num">MOM</th><th className="num">COGS *</th><th className="num">Net Profit</th><th className="num">Margin</th>
+        </tr></thead><tbody>
+          {monthly.map((m,i)=>(<tr key={i}>
+            <td>{m.monthName}</td><td className="num">{fmtNum(Math.round(m.units))}</td>
+            <td className="num">{fmtMoneyFull(m.gross)}</td><td className="num dim">{fmtMoneyFull(m.discount)}</td>
+            <td className="num"><strong>{fmtMoneyFull(m.net)}</strong></td>
+            <td className="num" style={{color:m.mom==null?'var(--text-faint)':m.mom>=0?'var(--accent)':'var(--rose)'}}>{m.mom==null?'\u2014':(m.mom>=0?'+':'')+m.mom.toFixed(1)+'%'}</td>
+            <td className="num dim">{fmtMoneyFull(m.cogs)}</td><td className="num"><strong>{fmtMoneyFull(m.netProfit)}</strong></td><td className="num">{m.margin.toFixed(1)}%</td>
+          </tr>))}
+          {monthly.length>0&&(<tr style={{background:'var(--bg-elev-2)',fontWeight:600}}>
+            <td>TOTAL</td><td className="num">{fmtNum(Math.round(monthly.reduce((s,m)=>s+m.units,0)))}</td>
+            <td className="num">{fmtMoneyFull(monthly.reduce((s,m)=>s+m.gross,0))}</td><td className="num dim">{fmtMoneyFull(monthly.reduce((s,m)=>s+m.discount,0))}</td>
+            <td className="num"><strong>{fmtMoneyFull(monthly.reduce((s,m)=>s+m.net,0))}</strong></td><td className="num dim">\u2014</td>
+            <td className="num dim">{fmtMoneyFull(monthly.reduce((s,m)=>s+m.cogs,0))}</td><td className="num"><strong style={{color:'var(--accent)'}}>{fmtMoneyFull(monthly.reduce((s,m)=>s+m.netProfit,0))}</strong></td><td className="num"><strong>{kpis.margin.toFixed(1)}%</strong></td>
+          </tr>)}
+        </tbody></table>
+      </div></div>
+    </section>
+
+    <section className="section">
+      <div className="section-header"><h2 className="section-title">Product <em>breakdown</em></h2><span className="section-meta">{fmtNum(products.length)} products</span></div>
+      <div className="card" style={{padding:0,overflow:'hidden'}}><div style={{overflowX:'auto',maxHeight:520}}>
+        <table className="data-table"><thead><tr><th>Product</th><th>Line</th><th className="num">Units</th><th className="num">Gross</th><th className="num">Discounts</th><th className="num">Net Sales</th><th className="num">Avg Unit $</th></tr></thead><tbody>
+          {products.slice(0,100).map((p,i)=>(<tr key={i}><td>{p.name}</td><td className="dim">{p.line}</td><td className="num">{fmtNum(Math.round(p.units))}</td><td className="num">{fmtMoneyFull(p.gross)}</td><td className="num dim">{fmtMoneyFull(p.discount)}</td><td className="num"><strong>{fmtMoneyFull(p.net)}</strong></td><td className="num dim">{fmtMoneyFull(p.avgUnit)}</td></tr>))}
+        </tbody></table>
+      </div>{products.length>100&&<div style={{padding:'12px 16px',fontFamily:'JetBrains Mono',fontSize:11,color:'var(--text-faint)',textAlign:'center',borderTop:'1px solid var(--border)'}}>Showing top 100 of {fmtNum(products.length)} by net sales</div>}</div>
+    </section>
+
+    <section className="section">
+      <div className="section-header"><h2 className="section-title">Invoices <em>\u00b7 per order</em></h2><span className="section-meta">{fmtNum(invoices.length)} orders</span></div>
+      <div className="card" style={{padding:0,overflow:'hidden'}}><div style={{overflowX:'auto',maxHeight:480}}>
+        <table className="data-table"><thead><tr><th>Order #</th><th>Date</th><th>Buyer</th><th className="num">Lines</th><th className="num">Units</th><th className="num">Gross</th><th className="num">Discount</th><th className="num">Net</th><th>Payment</th></tr></thead><tbody>
+          {invoices.slice(0,100).map((inv,i)=>(<tr key={i} style={{cursor:'pointer'}} onClick={()=>setFilters(f=>({...f,invoice:String(inv.invoice)}))} title="Filter by this order">
+            <td className="font-mono" style={{color:'var(--accent)'}}>{inv.invoice}</td><td className="dim font-mono">{(inv.date||'').slice(0,10)}</td><td>{inv.buyer}</td>
+            <td className="num dim">{fmtNum(inv.lines)}</td><td className="num"><strong>{fmtNum(Math.round(inv.units))}</strong></td>
+            <td className="num">{fmtMoneyFull(inv.gross)}</td><td className="num dim">{fmtMoneyFull(inv.discount)}</td><td className="num"><strong>{fmtMoneyFull(inv.net)}</strong></td><td><StatusPill status={inv.status}/></td>
+          </tr>))}
+        </tbody></table>
+      </div>{invoices.length>100&&<div style={{padding:'12px 16px',fontFamily:'JetBrains Mono',fontSize:11,color:'var(--text-faint)',textAlign:'center',borderTop:'1px solid var(--border)'}}>Showing 100 of {fmtNum(invoices.length)} \u00b7 use filters to narrow</div>}</div>
+    </section>
+
+    <div style={{marginTop:24,padding:'12px 16px',background:'var(--bg-elev)',border:'1px solid var(--border)',borderRadius:4,fontFamily:'JetBrains Mono,monospace',fontSize:11,color:'var(--text-dim)',lineHeight:1.6}}>
+      <span style={{color:'var(--accent)'}}>*</span> COGS isn\u2019t in LeafLink order data, so Net Profit / Margin use a modeled cost ratio of <strong style={{color:'var(--text)'}}>{(filters.cogsRatio*100).toFixed(0)}%</strong> of net sales (adjust the slider). Net Revenue reconciles to LeafLink order totals; Gross is list price before order-level discounts.
+    </div>
+
+    <footer style={{marginTop:60,padding:'20px 0',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',fontFamily:'JetBrains Mono',fontSize:11,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'0.12em'}}>
+      <span>Chill Medicated \u00b7 Sales Intelligence</span><span>LeafLink \u00b7 Auto-refresh 60s</span>
+    </footer>
+  </div>);
+}
+
+function Topbar({fetchedAt,rowCount,totalCount,data}){
+  const ago=Math.floor((Date.now()-fetchedAt.getTime())/60000);
+  return (<div className="topbar">
+    <div className="brand-mark" style={{display:'flex',alignItems:'center',gap:16}}>
+      <img src="logo.png" alt="" style={{height:48,width:'auto',flexShrink:0}} onError={(e)=>{e.target.style.display='none';}}/>
+      <div>
+        <h1 className="brand-name" style={{lineHeight:1,fontSize:26}}>
+          <span style={{background:'linear-gradient(90deg,#e8d838 0%,#8a7d18 100%)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>Chill</span>{' '}
+          <em style={{color:'var(--text-dim)',fontStyle:'italic',fontWeight:400}}>Medicated</em>
+        </h1>
+        <div className="brand-tag" style={{marginTop:4}}>LeafLink \u00b7 Sales Intelligence</div>
+      </div>
+    </div>
+    <div className="topbar-meta">
+      <span><strong>{fmtNum(rowCount)}</strong> / {fmtNum(totalCount)} rows</span><span>\u00b7</span>
+      <span>{data.from_date?`since ${data.from_date}`:''}</span><span>\u00b7</span>
+      <span>Updated {ago<1?'just now':ago+'m ago'}</span><span className="pulse"></span>
+    </div>
+  </div>);
+}
+
+function FilterBar({filters,setFilters,distinct,onReset}){
+  const upd=(k,v)=>setFilters(f=>({...f,[k]:v}));
+  return (<div className="filters">
+    <div className="filter-group"><label className="filter-label">From</label><input type="date" className="filter-input" value={filters.from} onChange={e=>upd('from',e.target.value)}/></div>
+    <div className="filter-group"><label className="filter-label">To</label><input type="date" className="filter-input" value={filters.to} onChange={e=>upd('to',e.target.value)}/></div>
+    <div className="filter-group"><label className="filter-label">Buyer</label><select className="filter-select" value={filters.buyer} onChange={e=>upd('buyer',e.target.value)}><option value="">All</option>{distinct.buyers.map(b=><option key={b}>{b}</option>)}</select></div>
+    <div className="filter-group"><label className="filter-label">Product Line</label><select className="filter-select" value={filters.productLine} onChange={e=>upd('productLine',e.target.value)}><option value="">All</option>{distinct.productLines.map(b=><option key={b}>{b}</option>)}</select></div>
+    <div className="filter-group"><label className="filter-label">Payment</label><select className="filter-select" value={filters.status} onChange={e=>upd('status',e.target.value)}><option value="">All</option>{distinct.statuses.map(b=><option key={b}>{b}</option>)}</select></div>
+    <div className="filter-group"><label className="filter-label">Order #</label><input type="text" className="filter-input" placeholder="search\u2026" value={filters.invoice} onChange={e=>upd('invoice',e.target.value)}/></div>
+    <div className="filter-group" style={{justifyContent:'flex-end'}}><label className="filter-label" style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',paddingBottom:9}}><input type="checkbox" checked={filters.excludeSamples} onChange={e=>upd('excludeSamples',e.target.checked)} style={{accentColor:'var(--accent)',width:14,height:14}}/>Exclude samples</label></div>
+    <div className="filter-group" style={{minWidth:180}}><label className="filter-label" style={{display:'flex',justifyContent:'space-between'}}><span>Modeled COGS *</span><span style={{color:'var(--accent)'}}>{(filters.cogsRatio*100).toFixed(0)}%</span></label><input type="range" min="0.30" max="0.60" step="0.01" value={filters.cogsRatio} onChange={e=>upd('cogsRatio',parseFloat(e.target.value))} style={{accentColor:'var(--accent)',width:'100%',marginTop:8}}/></div>
+    <button className="filter-reset" onClick={onReset}>Reset</button>
+  </div>);
+}
+
+function Kpi({label,value,sub,accent}){return <div className={'kpi'+(accent?' kpi-accent':'')}><div className="kpi-label">{label}</div><div className="kpi-value tabular">{value}</div>{sub&&<div className="kpi-sub">{sub}</div>}</div>;}
+function RankCard({title,data}){return <div><div className="section-header"><h2 className="section-title">{title.split(' ')[0]} <em>{title.split(' ').slice(1).join(' ')}</em></h2><span className="section-meta">top {data.length}</span></div><div className="card"><RankList data={data}/></div></div>;}
+function RankList({data}){const max=Math.max(...data.map(d=>d.revenue),1);return <div className="rank-list">{data.length===0&&<div style={{padding:20,color:'var(--text-faint)',textAlign:'center',fontSize:13}}>No data</div>}{data.map((d,i)=>(<div key={i} className="rank-row"><div className="rank-num">{String(i+1).padStart(2,'0')}</div><div className="rank-name" title={d.name}>{d.name}</div><div className="rank-value">{fmtMoneyFull(d.revenue)}</div><div className="rank-bar" style={{width:`calc(${(d.revenue/max*100).toFixed(1)}% - 80px)`}}></div></div>))}</div>;}
+function StatusPill({status}){if(!status)return <span className="dim">\u2014</span>;const s=status.toLowerCase();const cls=s.includes('paid')&&!s.includes('un')?'pill-paid':s.includes('overdue')?'pill-overdue':'pill-unpaid';return <span className={'pill '+cls}>{status}</span>;}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
