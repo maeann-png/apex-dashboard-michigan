@@ -32,7 +32,11 @@ from dotenv import load_dotenv
 # ----------------------------------------------------------------------------
 load_dotenv()
 
-API_BASE = os.getenv("LEAFLINK_API_BASE", "https://api.leaflink.com")
+# App tokens (Authorization: App ...) use LeafLink's Marketplace V2 API, which is
+# served from the main domain under the /api/v2/ path. (api.leaflink.com is a
+# DIFFERENT, newer API that uses Bearer JWT tokens and has no /api/v2/ prefix —
+# don't use it with an App token.) Sandbox equivalent: https://sandbox.leaflink.com
+API_BASE = os.getenv("LEAFLINK_API_BASE", "https://www.leaflink.com")
 
 # The Application API key from Settings > Applications. NEVER commit this.
 # Auth scheme is:  Authorization: App <key>   (note the single space after App)
