@@ -160,11 +160,21 @@ def _frozen_product(li):
     return prod if isinstance(prod, dict) else {}
 
 
+def _payment_status(o):
+    if o.get("paid"):
+        return "Paid"
+    due = _date_key(o.get("payment_due_date"))
+    today = datetime.now().strftime("%Y-%m-%d")
+    if due and due < today:
+        return "Overdue"
+    return "Unpaid"
+
+
 def flatten(orders, brand_q, from_date=""):
     rows = []
     seller_ids, brand_ids_seen = set(), set()
     matched = total_lines = skipped_old = 0
-    recon_order_total = recon_line_total = 0.0
+    recon_order_total = recon_net_total = recon_gross_total = 0.0
     brand_q = (brand_q or "").strip().lower()
     from_date = (from_date or "").strip()
 
@@ -182,9 +192,9 @@ def flatten(orders, brand_q, from_date=""):
                 skipped_old += 1
                 continue
 
-        ot = _amount(o.get("total"))
-        if ot is not None:
-            recon_order_total += ot
+        order_total = _amount(o.get("total"))
+        if order_total is not None:
+            recon_order_total += order_total
 
         common = {
             "order_number": _first(o, "short_id", "number", "id"),
@@ -196,16 +206,21 @@ def flatten(orders, brand_q, from_date=""):
             "buyer_state": "",   # not in order payload; enrich via customers endpoint later
             "buyer_license": "",
             "sales_rep": _name_of(_first(o, "sales_rep", "sales_reps")),
+            "payment_status": _payment_status(o),
+            "paid": bool(o.get("paid")),
+            "payment_term": o.get("payment_term") or "",
+            "order_total": order_total,
         }
 
+        # Pass 1: parse every line, compute gross, and the order's gross subtotal.
+        parsed = []
+        order_gross = 0.0
         for li in (o.get("line_items") or o.get("lineitems") or []):
             if not isinstance(li, dict):
                 continue
-            total_lines += 1
             prod = _frozen_product(li)
             pname = prod.get("name") or _first(li, "product_name") or ""
             brand = (_name_of(prod.get("brand")) or _name_of(prod.get("brand_name")) or pname)
-
             qty = _amount(li.get("quantity")) or 0.0
             mult = _amount(li.get("unit_multiplier")) or 1.0
             sold_units = qty / mult if mult else qty
@@ -213,12 +228,26 @@ def flatten(orders, brand_q, from_date=""):
             sale_price = _amount(li.get("sale_price"))
             on_sale = bool(li.get("on_sale")) or (sale_price or 0) > 0
             eff = sale_price if (on_sale and (sale_price or 0) > 0) else unit_price
-            line_rev = (eff or 0) * sold_units
-            recon_line_total += line_rev
+            gross = (eff or 0) * sold_units
+            order_gross += gross
+            parsed.append((li, prod, pname, brand, qty, mult, sold_units,
+                           unit_price, sale_price, gross))
 
+        # Net allocation: scale each line's gross so the order's lines sum to the
+        # actual order total (distributes order-level discount/tax/shipping). This
+        # makes the dashboard's revenue tie out to LeafLink's order totals exactly.
+        scale = (order_total / order_gross) if (order_total is not None and order_gross) else 1.0
+        recon_gross_total += order_gross
+        recon_net_total += order_gross * scale
+
+        # Pass 2: emit rows for brand matches.
+        for (li, prod, pname, brand, qty, mult, sold_units,
+             unit_price, sale_price, gross) in parsed:
+            total_lines += 1
             if brand_q and brand_q not in brand.lower():
                 continue
             matched += 1
+            net = gross * scale
             rows.append({
                 **common,
                 "brand": (_name_of(prod.get("brand")) or _name_of(prod.get("brand_name"))
@@ -234,7 +263,9 @@ def flatten(orders, brand_q, from_date=""):
                 "unit_price": unit_price,
                 "sale_price": sale_price,
                 "is_sample": bool(li.get("is_sample")),
-                "line_total": round(line_rev, 2),
+                "gross": round(gross, 2),
+                "discount": round(gross - net, 2),
+                "revenue": round(net, 2),
             })
 
     stats = {
@@ -242,7 +273,8 @@ def flatten(orders, brand_q, from_date=""):
         "brand_ids": sorted(brand_ids_seen),
         "matched": matched, "total_lines": total_lines, "skipped_old": skipped_old,
         "recon_order_total": round(recon_order_total, 2),
-        "recon_line_total": round(recon_line_total, 2),
+        "recon_net_total": round(recon_net_total, 2),
+        "recon_gross_total": round(recon_gross_total, 2),
     }
     return rows, stats
 
@@ -276,11 +308,12 @@ def main():
     print(f"Brand id(s) in data:  {st['brand_ids']}   (Chill Medicated = 2425)")
     print(f"Date floor: {FROM_DATE or '(none)'}  ->  skipped {st['skipped_old']} older orders")
     print(f"Line items: {st['total_lines']} in range -> {st['matched']} kept (brand '{BRAND_FILTER}')")
-    # Reconciliation: across ALL brands in range, line revenue should ~= order totals.
-    ot, lt = st["recon_order_total"], st["recon_line_total"]
-    ratio = (lt / ot) if ot else 0
-    print(f"RECONCILE (all brands): sum line revenue ${lt:,.2f} vs sum order totals "
-          f"${ot:,.2f}  (ratio {ratio:.3f}; ~1.000 means the unit math is correct)")
+    # After net allocation, sum of net should equal sum of order totals (ratio ~1.000).
+    ot, nt, gt = st["recon_order_total"], st["recon_net_total"], st["recon_gross_total"]
+    ratio = (nt / ot) if ot else 0
+    print(f"RECONCILE (all brands): net ${nt:,.2f} vs order totals ${ot:,.2f} "
+          f"(ratio {ratio:.4f}; should be ~1.0000)")
+    print(f"  gross (list price) was ${gt:,.2f} -> order-level discounts/adj ${gt-nt:,.2f}")
 
     payload = {
         "fetched_at": datetime.now(timezone.utc).isoformat(),
