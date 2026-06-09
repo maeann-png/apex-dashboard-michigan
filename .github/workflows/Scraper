@@ -1,0 +1,48 @@
+name: Scrape LeafLink Sales
+
+on:
+  # GitHub's scheduler runs at most every 5 min and can lag a few minutes.
+  # Every 15 minutes is plenty for a sales dashboard.
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:        # lets you (or cron-job.org) trigger a run on demand
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scrape-leaflink
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scraper
+        env:
+          LEAFLINK_API_KEY: ${{ secrets.LEAFLINK_API_KEY }}
+          # Optional overrides (uncomment / add as repo variables if needed):
+          # LEAFLINK_ENDPOINT: '/orders-received/'
+          # LEAFLINK_PAGE_SIZE: '500'
+        run: python scraper.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sales_data.json
+          git diff --staged --quiet || git commit -m "Auto-update sales_data.json [skip ci]"
+          git push
