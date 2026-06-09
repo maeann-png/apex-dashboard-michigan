@@ -87,14 +87,14 @@ const { useState, useEffect, useMemo } = React;
 if (typeof Recharts === 'undefined') {
   document.getElementById('root').innerHTML =
     '<div style="max-width:600px;margin:80px auto;padding:32px;color:#f0f2e6;font-family:sans-serif">'+
-    '<h2 style="font-family:Fraunces,serif;font-style:italic">Charts library didn\u2019t load</h2>'+
-    '<p style="color:#a8ad8f">Recharts failed to load from the CDN \u2014 a blocker or offline network is the usual cause. Refresh, or allow jsdelivr.net / unpkg.com.</p></div>';
+    '<h2 style="font-family:Fraunces,serif;font-style:italic">Charts library didn’t load</h2>'+
+    '<p style="color:#a8ad8f">Recharts failed to load from the CDN — a blocker or offline network is the usual cause. Refresh, or allow jsdelivr.net / unpkg.com.</p></div>';
   throw new Error('Recharts failed to load');
 }
 const { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell } = Recharts;
 
 const fmtMoney = (n) => {
-  if (n == null || isNaN(n)) return '\u2014';
+  if (n == null || isNaN(n)) return '—';
   if (Math.abs(n) >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M';
   if (Math.abs(n) >= 1e3) return '$' + (n/1e3).toFixed(1) + 'K';
   return '$' + n.toLocaleString(undefined,{maximumFractionDigits:0});
@@ -120,7 +120,7 @@ function App(){
     load(); const id=setInterval(load,60000); return ()=>clearInterval(id);
   },[]);
   if(error) return <div className="app"><div className="empty"><h2>No data yet</h2><p>Run the scraper to generate <code>sales_data.json</code>, then refresh.</p><p style={{marginTop:12,fontSize:12,color:'var(--text-faint)'}}>{error}</p></div></div>;
-  if(!data) return <div className="app"><div className="empty"><h2>Loading\u2026</h2></div></div>;
+  if(!data) return <div className="app"><div className="empty"><h2>Loading…</h2></div></div>;
   return <Dashboard data={data} filters={filters} setFilters={setFilters} />;
 }
 
@@ -135,7 +135,7 @@ function Dashboard({data,filters,setFilters}){
     _units: +r.units_sold || 0,
     _qty: +r.quantity || 0,
     _isSample: !!r.is_sample,
-    productLine: r.product_line || r.product_type || '\u2014',
+    productLine: r.product_line || r.product_type || '—',
   })),[rows]);
 
   const distinct = useMemo(()=>({
@@ -166,7 +166,7 @@ function Dashboard({data,filters,setFilters}){
     const cost=revenue*filters.cogsRatio;
     const margin=revenue?((revenue-cost)/revenue)*100:0;
     const byMonth={}; filtered.forEach(r=>{if(!r._date)return;const k=`${r._date.getFullYear()}-${String(r._date.getMonth()+1).padStart(2,'0')}`;byMonth[k]=(byMonth[k]||0)+r._revenue;});
-    const mk=Object.keys(byMonth).sort(); let mom=null,momLabel='\u2014';
+    const mk=Object.keys(byMonth).sort(); let mom=null,momLabel='—';
     if(mk.length>=2){const a=byMonth[mk[mk.length-1]],b=byMonth[mk[mk.length-2]];if(b){mom=((a-b)/b)*100;momLabel=mk[mk.length-1]+' vs '+mk[mk.length-2];}}
     return {revenue,gross,discounts,units,cost,margin,netProfit:revenue-cost,
       orders:orders.size,buyers:buyers.size,avgOrder:orders.size?revenue/orders.size:0,
@@ -198,7 +198,7 @@ function Dashboard({data,filters,setFilters}){
 
   const invoices=useMemo(()=>{
     const m={};filtered.forEach(r=>{const id=r.order_uid||r.order_number;if(!id)return;
-      if(!m[id])m[id]={id,invoice:r.order_number,date:r.order_date,_date:r._date,buyer:r.buyer_name||'\u2014',status:r.payment_status||'Unknown',lines:0,units:0,gross:0,discount:0,net:0};
+      if(!m[id])m[id]={id,invoice:r.order_number,date:r.order_date,_date:r._date,buyer:r.buyer_name||'—',status:r.payment_status||'Unknown',lines:0,units:0,gross:0,discount:0,net:0};
       m[id].lines++;m[id].units+=r._units;m[id].gross+=r._gross;m[id].discount+=r._discount;m[id].net+=r._revenue;});
     return Object.values(m).sort((a,b)=>(b._date?.getTime()||0)-(a._date?.getTime()||0));
   },[filtered]);
@@ -213,14 +213,14 @@ function Dashboard({data,filters,setFilters}){
     <div className="kpi-grid">
       <Kpi label="Net Revenue" value={fmtMoney(kpis.revenue)} sub={`${fmtNum(kpis.lineItems)} line items`} accent/>
       <Kpi label="Gross Sales" value={fmtMoney(kpis.gross)} sub="before discounts"/>
-      <Kpi label="Discounts" value={fmtMoney(kpis.discounts)} sub={kpis.gross?((kpis.discounts/kpis.gross)*100).toFixed(1)+'% of gross':'\u2014'}/>
-      <Kpi label="MOM Change" value={kpis.mom==null?'\u2014':(kpis.mom>=0?'+':'')+kpis.mom.toFixed(1)+'%'} sub={kpis.momLabel}/>
+      <Kpi label="Discounts" value={fmtMoney(kpis.discounts)} sub={kpis.gross?((kpis.discounts/kpis.gross)*100).toFixed(1)+'% of gross':'—'}/>
+      <Kpi label="MOM Change" value={kpis.mom==null?'—':(kpis.mom>=0?'+':'')+kpis.mom.toFixed(1)+'%'} sub={kpis.momLabel}/>
     </div>
     <div className="kpi-grid">
       <Kpi label="Orders" value={fmtNum(kpis.orders)} sub={`${fmtMoney(kpis.avgOrder)} avg order`}/>
       <Kpi label="Units Sold" value={fmtNum(Math.round(kpis.units))} sub={`${kpis.avgUnitsPerInvoice.toFixed(1)} per order`}/>
       <Kpi label="Active Buyers" value={fmtNum(kpis.buyers)} sub="unique accounts"/>
-      <Kpi label="Net Profit *" value={fmtMoney(kpis.netProfit)} sub={`modeled \u00b7 ${(filters.cogsRatio*100).toFixed(0)}% COGS \u00b7 ${kpis.margin.toFixed(1)}% margin`}/>
+      <Kpi label="Net Profit *" value={fmtMoney(kpis.netProfit)} sub={`modeled · ${(filters.cogsRatio*100).toFixed(0)}% COGS · ${kpis.margin.toFixed(1)}% margin`}/>
     </div>
 
     <section className="section">
@@ -275,13 +275,13 @@ function Dashboard({data,filters,setFilters}){
             <td>{m.monthName}</td><td className="num">{fmtNum(Math.round(m.units))}</td>
             <td className="num">{fmtMoneyFull(m.gross)}</td><td className="num dim">{fmtMoneyFull(m.discount)}</td>
             <td className="num"><strong>{fmtMoneyFull(m.net)}</strong></td>
-            <td className="num" style={{color:m.mom==null?'var(--text-faint)':m.mom>=0?'var(--accent)':'var(--rose)'}}>{m.mom==null?'\u2014':(m.mom>=0?'+':'')+m.mom.toFixed(1)+'%'}</td>
+            <td className="num" style={{color:m.mom==null?'var(--text-faint)':m.mom>=0?'var(--accent)':'var(--rose)'}}>{m.mom==null?'—':(m.mom>=0?'+':'')+m.mom.toFixed(1)+'%'}</td>
             <td className="num dim">{fmtMoneyFull(m.cogs)}</td><td className="num"><strong>{fmtMoneyFull(m.netProfit)}</strong></td><td className="num">{m.margin.toFixed(1)}%</td>
           </tr>))}
           {monthly.length>0&&(<tr style={{background:'var(--bg-elev-2)',fontWeight:600}}>
             <td>TOTAL</td><td className="num">{fmtNum(Math.round(monthly.reduce((s,m)=>s+m.units,0)))}</td>
             <td className="num">{fmtMoneyFull(monthly.reduce((s,m)=>s+m.gross,0))}</td><td className="num dim">{fmtMoneyFull(monthly.reduce((s,m)=>s+m.discount,0))}</td>
-            <td className="num"><strong>{fmtMoneyFull(monthly.reduce((s,m)=>s+m.net,0))}</strong></td><td className="num dim">\u2014</td>
+            <td className="num"><strong>{fmtMoneyFull(monthly.reduce((s,m)=>s+m.net,0))}</strong></td><td className="num dim">—</td>
             <td className="num dim">{fmtMoneyFull(monthly.reduce((s,m)=>s+m.cogs,0))}</td><td className="num"><strong style={{color:'var(--accent)'}}>{fmtMoneyFull(monthly.reduce((s,m)=>s+m.netProfit,0))}</strong></td><td className="num"><strong>{kpis.margin.toFixed(1)}%</strong></td>
           </tr>)}
         </tbody></table>
@@ -298,7 +298,7 @@ function Dashboard({data,filters,setFilters}){
     </section>
 
     <section className="section">
-      <div className="section-header"><h2 className="section-title">Invoices <em>\u00b7 per order</em></h2><span className="section-meta">{fmtNum(invoices.length)} orders</span></div>
+      <div className="section-header"><h2 className="section-title">Invoices <em>· per order</em></h2><span className="section-meta">{fmtNum(invoices.length)} orders</span></div>
       <div className="card" style={{padding:0,overflow:'hidden'}}><div style={{overflowX:'auto',maxHeight:480}}>
         <table className="data-table"><thead><tr><th>Order #</th><th>Date</th><th>Buyer</th><th className="num">Lines</th><th className="num">Units</th><th className="num">Gross</th><th className="num">Discount</th><th className="num">Net</th><th>Payment</th></tr></thead><tbody>
           {invoices.slice(0,100).map((inv,i)=>(<tr key={i} style={{cursor:'pointer'}} onClick={()=>setFilters(f=>({...f,invoice:String(inv.invoice)}))} title="Filter by this order">
@@ -307,15 +307,15 @@ function Dashboard({data,filters,setFilters}){
             <td className="num">{fmtMoneyFull(inv.gross)}</td><td className="num dim">{fmtMoneyFull(inv.discount)}</td><td className="num"><strong>{fmtMoneyFull(inv.net)}</strong></td><td><StatusPill status={inv.status}/></td>
           </tr>))}
         </tbody></table>
-      </div>{invoices.length>100&&<div style={{padding:'12px 16px',fontFamily:'JetBrains Mono',fontSize:11,color:'var(--text-faint)',textAlign:'center',borderTop:'1px solid var(--border)'}}>Showing 100 of {fmtNum(invoices.length)} \u00b7 use filters to narrow</div>}</div>
+      </div>{invoices.length>100&&<div style={{padding:'12px 16px',fontFamily:'JetBrains Mono',fontSize:11,color:'var(--text-faint)',textAlign:'center',borderTop:'1px solid var(--border)'}}>Showing 100 of {fmtNum(invoices.length)} · use filters to narrow</div>}</div>
     </section>
 
     <div style={{marginTop:24,padding:'12px 16px',background:'var(--bg-elev)',border:'1px solid var(--border)',borderRadius:4,fontFamily:'JetBrains Mono,monospace',fontSize:11,color:'var(--text-dim)',lineHeight:1.6}}>
-      <span style={{color:'var(--accent)'}}>*</span> COGS isn\u2019t in LeafLink order data, so Net Profit / Margin use a modeled cost ratio of <strong style={{color:'var(--text)'}}>{(filters.cogsRatio*100).toFixed(0)}%</strong> of net sales (adjust the slider). Net Revenue reconciles to LeafLink order totals; Gross is list price before order-level discounts.
+      <span style={{color:'var(--accent)'}}>*</span> COGS isn’t in LeafLink order data, so Net Profit / Margin use a modeled cost ratio of <strong style={{color:'var(--text)'}}>{(filters.cogsRatio*100).toFixed(0)}%</strong> of net sales (adjust the slider). Net Revenue reconciles to LeafLink order totals; Gross is list price before order-level discounts.
     </div>
 
     <footer style={{marginTop:60,padding:'20px 0',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',fontFamily:'JetBrains Mono',fontSize:11,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'0.12em'}}>
-      <span>Chill Medicated \u00b7 Sales Intelligence</span><span>LeafLink \u00b7 Auto-refresh 60s</span>
+      <span>Chill Medicated · Sales Intelligence</span><span>LeafLink · Auto-refresh 60s</span>
     </footer>
   </div>);
 }
@@ -330,12 +330,12 @@ function Topbar({fetchedAt,rowCount,totalCount,data}){
           <span style={{background:'linear-gradient(90deg,#e8d838 0%,#8a7d18 100%)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>Chill</span>{' '}
           <em style={{color:'var(--text-dim)',fontStyle:'italic',fontWeight:400}}>Medicated</em>
         </h1>
-        <div className="brand-tag" style={{marginTop:4}}>LeafLink \u00b7 Sales Intelligence</div>
+        <div className="brand-tag" style={{marginTop:4}}>LeafLink · Sales Intelligence</div>
       </div>
     </div>
     <div className="topbar-meta">
-      <span><strong>{fmtNum(rowCount)}</strong> / {fmtNum(totalCount)} rows</span><span>\u00b7</span>
-      <span>{data.from_date?`since ${data.from_date}`:''}</span><span>\u00b7</span>
+      <span><strong>{fmtNum(rowCount)}</strong> / {fmtNum(totalCount)} rows</span><span>·</span>
+      <span>{data.from_date?`since ${data.from_date}`:''}</span><span>·</span>
       <span>Updated {ago<1?'just now':ago+'m ago'}</span><span className="pulse"></span>
     </div>
   </div>);
@@ -349,7 +349,7 @@ function FilterBar({filters,setFilters,distinct,onReset}){
     <div className="filter-group"><label className="filter-label">Buyer</label><select className="filter-select" value={filters.buyer} onChange={e=>upd('buyer',e.target.value)}><option value="">All</option>{distinct.buyers.map(b=><option key={b}>{b}</option>)}</select></div>
     <div className="filter-group"><label className="filter-label">Product Line</label><select className="filter-select" value={filters.productLine} onChange={e=>upd('productLine',e.target.value)}><option value="">All</option>{distinct.productLines.map(b=><option key={b}>{b}</option>)}</select></div>
     <div className="filter-group"><label className="filter-label">Payment</label><select className="filter-select" value={filters.status} onChange={e=>upd('status',e.target.value)}><option value="">All</option>{distinct.statuses.map(b=><option key={b}>{b}</option>)}</select></div>
-    <div className="filter-group"><label className="filter-label">Order #</label><input type="text" className="filter-input" placeholder="search\u2026" value={filters.invoice} onChange={e=>upd('invoice',e.target.value)}/></div>
+    <div className="filter-group"><label className="filter-label">Order #</label><input type="text" className="filter-input" placeholder="search…" value={filters.invoice} onChange={e=>upd('invoice',e.target.value)}/></div>
     <div className="filter-group" style={{justifyContent:'flex-end'}}><label className="filter-label" style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',paddingBottom:9}}><input type="checkbox" checked={filters.excludeSamples} onChange={e=>upd('excludeSamples',e.target.checked)} style={{accentColor:'var(--accent)',width:14,height:14}}/>Exclude samples</label></div>
     <div className="filter-group" style={{minWidth:180}}><label className="filter-label" style={{display:'flex',justifyContent:'space-between'}}><span>Modeled COGS *</span><span style={{color:'var(--accent)'}}>{(filters.cogsRatio*100).toFixed(0)}%</span></label><input type="range" min="0.30" max="0.60" step="0.01" value={filters.cogsRatio} onChange={e=>upd('cogsRatio',parseFloat(e.target.value))} style={{accentColor:'var(--accent)',width:'100%',marginTop:8}}/></div>
     <button className="filter-reset" onClick={onReset}>Reset</button>
@@ -359,7 +359,7 @@ function FilterBar({filters,setFilters,distinct,onReset}){
 function Kpi({label,value,sub,accent}){return <div className={'kpi'+(accent?' kpi-accent':'')}><div className="kpi-label">{label}</div><div className="kpi-value tabular">{value}</div>{sub&&<div className="kpi-sub">{sub}</div>}</div>;}
 function RankCard({title,data}){return <div><div className="section-header"><h2 className="section-title">{title.split(' ')[0]} <em>{title.split(' ').slice(1).join(' ')}</em></h2><span className="section-meta">top {data.length}</span></div><div className="card"><RankList data={data}/></div></div>;}
 function RankList({data}){const max=Math.max(...data.map(d=>d.revenue),1);return <div className="rank-list">{data.length===0&&<div style={{padding:20,color:'var(--text-faint)',textAlign:'center',fontSize:13}}>No data</div>}{data.map((d,i)=>(<div key={i} className="rank-row"><div className="rank-num">{String(i+1).padStart(2,'0')}</div><div className="rank-name" title={d.name}>{d.name}</div><div className="rank-value">{fmtMoneyFull(d.revenue)}</div><div className="rank-bar" style={{width:`calc(${(d.revenue/max*100).toFixed(1)}% - 80px)`}}></div></div>))}</div>;}
-function StatusPill({status}){if(!status)return <span className="dim">\u2014</span>;const s=status.toLowerCase();const cls=s.includes('paid')&&!s.includes('un')?'pill-paid':s.includes('overdue')?'pill-overdue':'pill-unpaid';return <span className={'pill '+cls}>{status}</span>;}
+function StatusPill({status}){if(!status)return <span className="dim">—</span>;const s=status.toLowerCase();const cls=s.includes('paid')&&!s.includes('un')?'pill-paid':s.includes('overdue')?'pill-overdue':'pill-unpaid';return <span className={'pill '+cls}>{status}</span>;}
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
