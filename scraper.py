@@ -31,6 +31,12 @@ ENDPOINT = os.getenv("LEAFLINK_ENDPOINT", "/api/v2/orders-received/")
 # Customers endpoint — used to enrich orders with the assigned sales rep (and
 # state/license when present), since the orders feed doesn't carry them.
 CUSTOMERS_ENDPOINT = os.getenv("LEAFLINK_CUSTOMERS_ENDPOINT", "/api/v2/customers/")
+# Customers carry the assigned rep as the `managers` field — a list of user IDs.
+# These endpoints (tried in order) resolve those IDs to rep names.
+USERS_ENDPOINTS = [e.strip() for e in os.getenv(
+    "LEAFLINK_USERS_ENDPOINTS",
+    "/api/v2/users/,/api/v2/company-staff/,/api/v2/staff/,/api/v2/team-members/"
+).split(",") if e.strip()]
 API_KEY = os.getenv("LEAFLINK_API_KEY", "")
 
 # Keep only line items whose product name / brand contains this (case-insensitive).
@@ -252,17 +258,75 @@ def _person_name(v):
     return ""
 
 
-def _rep_of(c):
-    """Pull the assigned sales rep from a customer object, trying common shapes."""
+def _manager_ids(c):
+    """Assigned rep(s) on a customer = the `managers` field (list of user IDs).
+    Also tolerate a few alternate shapes / names."""
     if not isinstance(c, dict):
-        return ""
-    for k in ("sales_rep", "sales_reps", "assigned_sales_reps", "assigned_sales_rep",
-              "account_manager", "default_sales_rep", "rep", "reps", "owner"):
-        if c.get(k) not in (None, "", []):
-            nm = _person_name(c.get(k))
-            if nm:
-                return nm
-    return ""
+        return []
+    ids = []
+    for k in ("managers", "sales_reps", "assigned_sales_reps", "account_managers",
+              "sales_rep", "account_manager"):
+        v = c.get(k)
+        if v in (None, "", []):
+            continue
+        items = v if isinstance(v, list) else [v]
+        for x in items:
+            if isinstance(x, bool):
+                continue
+            if isinstance(x, int):
+                ids.append(str(x))
+            elif isinstance(x, dict):
+                xid = _first(x, "id", "pk", "user_id")
+                nm = _person_name(x)
+                ids.append(nm if nm else (str(xid) if xid is not None else ""))
+            elif isinstance(x, str) and x.strip():
+                ids.append(x.strip())
+    out, seen = [], set()
+    for i in ids:
+        if i and i not in seen:
+            seen.add(i)
+            out.append(i)
+    return out
+
+
+def fetch_users():
+    """Build {user_id(str): name} by paging the users endpoint(s). {} on failure."""
+    if not API_KEY:
+        return {}
+    out = {}
+    for ep in USERS_ENDPOINTS:
+        url = f"{API_BASE}{ep}"
+        resp = _get(url, {"page_size": PAGE_SIZE, "page": 1})
+        if resp.status_code != 200:
+            continue
+        try:
+            data = resp.json()
+        except Exception:
+            continue
+        added = 0
+        while True:
+            batch = data.get("results", data if isinstance(data, list) else [])
+            for u in batch:
+                if not isinstance(u, dict):
+                    continue
+                uid = _first(u, "id", "pk", "user_id")
+                nm = _person_name(u)
+                if uid is not None and nm:
+                    out.setdefault(str(uid), nm)
+                    added += 1
+            nxt = data.get("next") if isinstance(data, dict) else None
+            if not nxt:
+                break
+            resp = _get(nxt, None)
+            if resp.status_code != 200:
+                break
+            try:
+                data = resp.json()
+            except Exception:
+                break
+        if added:
+            print(f"  resolved {added} user name(s) from {ep}")
+    return out
 
 
 def _state_of(c):
@@ -343,15 +407,20 @@ def fetch_customers():
     return out
 
 
-def build_enrichment(customers):
-    """Build id/name -> rep/state/license maps from the customer list."""
+def build_enrichment(customers, user_map):
+    """Build id/name -> rep/state/license maps from the customer list.
+    Rep = the customer's `managers` (user IDs) resolved via user_map; falls back
+    to a 'Rep #<id>' label when a name can't be resolved."""
     enrich = {"rep_by_id": {}, "rep_by_name": {},
               "state_by_id": {}, "state_by_name": {},
               "lic_by_id": {}, "lic_by_name": {}}
     reps_found = 0
     for c in customers:
         cid = _first(c, "id", "pk", "customer_id")
-        rep, state, lic = _rep_of(c), _state_of(c), _license_of(c)
+        mids = _manager_ids(c)
+        rep = ", ".join(user_map.get(i) or (i if not i.isdigit() else f"Rep #{i}")
+                        for i in mids) if mids else ""
+        state, lic = _state_of(c), _license_of(c)
         if rep:
             reps_found += 1
         if cid is not None:
@@ -534,15 +603,14 @@ def main():
     # Enrich with sales rep (and state/license when available) from customers.
     print(f"Fetching customers from {CUSTOMERS_ENDPOINT} for sales-rep enrichment...")
     customers = fetch_customers()
-    enrich = build_enrichment(customers)
-    print(f"Customers fetched: {len(customers)} | with an assigned sales rep: "
-          f"{enrich.get('_reps_found', 0)}")
+    print("Resolving rep names from users endpoint(s)...")
+    user_map = fetch_users() if customers else {}
+    enrich = build_enrichment(customers, user_map)
+    print(f"Users resolved to names: {len(user_map)} | Customers fetched: {len(customers)} "
+          f"| customers with a rep: {enrich.get('_reps_found', 0)}")
     if customers and enrich.get("_reps_found", 0) == 0:
-        sample = {k: v for k, v in (customers[0] or {}).items()
-                  if k not in ("orders",)}
-        print("  No rep field matched on customers. First customer keys: "
+        print("  No 'managers' on customers. First customer keys: "
               f"{sorted((customers[0] or {}).keys())}")
-        print("  Sample customer (truncated): " + json.dumps(sample, default=str)[:1200])
 
     if orders:
         first = orders[0]
