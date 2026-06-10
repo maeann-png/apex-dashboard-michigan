@@ -135,7 +135,9 @@ function Dashboard({data,filters,setFilters}){
     _units: +r.units_sold || 0,
     _qty: +r.quantity || 0,
     _isSample: !!r.is_sample,
-    productLine: r.product_line || r.product_type || '—',
+    // product_line is blank in LeafLink for most items, so fall back to the line
+    // embedded in the product name: "Chill Medicated - <LINE> - <variant>" -> <LINE>.
+    productLine: r.product_line || r.product_type || (()=>{const p=String(r.product_name||'').split(/\s[-–]\s/); if(p.length>=3 && p[0].trim().toLowerCase().startsWith('chill')) return p[1].trim(); if(p.length>=2) return p[0].trim().toLowerCase().startsWith('chill')?p[1].trim():p[0].trim(); return '';})() || '—',
     // City: use the real customer city from the scraper (buyer_city) when present,
     // else parse it from the buyer-name suffix ("King of Budz - Monroe" -> "Monroe").
     city: (() => { const real = String(r.buyer_city || '').trim(); if (real) return real; const n = String(r.buyer_name || ''); const m = n.split(/\s[-–]\s/); return m.length > 1 ? m[m.length - 1].trim() : ''; })(),
