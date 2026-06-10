@@ -364,6 +364,21 @@ def _license_of(c):
     return ""
 
 
+def _city_of(c):
+    if not isinstance(c, dict):
+        return ""
+    v = c.get("city")
+    if isinstance(v, str) and v.strip():
+        return v.strip()
+    for sk in ("address", "delivery_address", "corporate_address", "buyer", "company"):
+        sub = c.get(sk)
+        if isinstance(sub, dict):
+            v = sub.get("city")
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    return ""
+
+
 def _cust_names(c):
     """All plausible name strings for a customer, normalized for matching."""
     names = set()
@@ -413,14 +428,15 @@ def build_enrichment(customers, user_map):
     to a 'Rep #<id>' label when a name can't be resolved."""
     enrich = {"rep_by_id": {}, "rep_by_name": {},
               "state_by_id": {}, "state_by_name": {},
-              "lic_by_id": {}, "lic_by_name": {}}
+              "lic_by_id": {}, "lic_by_name": {},
+              "city_by_id": {}, "city_by_name": {}}
     reps_found = 0
     for c in customers:
         cid = _first(c, "id", "pk", "customer_id")
         mids = _manager_ids(c)
         rep = ", ".join(user_map.get(i) or (i if not i.isdigit() else f"Rep #{i}")
                         for i in mids) if mids else ""
-        state, lic = _state_of(c), _license_of(c)
+        state, lic, city = _state_of(c), _license_of(c), _city_of(c)
         if rep:
             reps_found += 1
         if cid is not None:
@@ -430,6 +446,8 @@ def build_enrichment(customers, user_map):
                 enrich["state_by_id"].setdefault(str(cid), state)
             if lic:
                 enrich["lic_by_id"].setdefault(str(cid), lic)
+            if city:
+                enrich["city_by_id"].setdefault(str(cid), city)
         for nm in _cust_names(c):
             if rep:
                 enrich["rep_by_name"].setdefault(nm, rep)
@@ -437,6 +455,8 @@ def build_enrichment(customers, user_map):
                 enrich["state_by_name"].setdefault(nm, state)
             if lic:
                 enrich["lic_by_name"].setdefault(nm, lic)
+            if city:
+                enrich["city_by_name"].setdefault(nm, city)
     enrich["_reps_found"] = reps_found
     return enrich
 
@@ -459,6 +479,7 @@ def flatten(orders, brand_q, from_date="", seller_id="", enrich=None):
     rep_by_id = enrich.get("rep_by_id", {}); rep_by_name = enrich.get("rep_by_name", {})
     state_by_id = enrich.get("state_by_id", {}); state_by_name = enrich.get("state_by_name", {})
     lic_by_id = enrich.get("lic_by_id", {}); lic_by_name = enrich.get("lic_by_name", {})
+    city_by_id = enrich.get("city_by_id", {}); city_by_name = enrich.get("city_by_name", {})
     rows = []
     seller_ids, brand_ids_seen = set(), set()
     matched = total_lines = skipped_old = skipped_company = skipped_status = 0
@@ -505,6 +526,7 @@ def flatten(orders, brand_q, from_date="", seller_id="", enrich=None):
                 or _name_of(_first(o, "sales_rep", "sales_reps")) or "")
         _state = state_by_id.get(_cid) or state_by_name.get(_cnm) or ""
         _lic = lic_by_id.get(_cid) or lic_by_name.get(_cnm) or ""
+        _city = city_by_id.get(_cid) or city_by_name.get(_cnm) or ""
         if _rep:
             rep_orders += 1
 
@@ -516,6 +538,7 @@ def flatten(orders, brand_q, from_date="", seller_id="", enrich=None):
             "delivery_date": _first(o, "ship_date", "delivery_date"),
             "buyer_name": _name_of(o.get("customer")) or _name_of(o.get("buyer")),
             "buyer_state": _state,
+            "buyer_city": _city,
             "buyer_license": _lic,
             "sales_rep": _rep,
             "payment_status": _payment_status(o),
