@@ -1,17 +1,14 @@
-name: Scrape LeafLink Sales
+name: Scrape LeafLink Sales (Michigan)
 
 on:
-  # GitHub's scheduler runs at most every 5 min and can lag a few minutes.
-  # Every 15 minutes is plenty for a sales dashboard.
   schedule:
-    - cron: '*/15 * * * *'
-  workflow_dispatch:        # lets you (or cron-job.org) trigger a run on demand
-  push:
-    branches: [main]
+    - cron: '*/15 * * * *'   # every 15 minutes
+  workflow_dispatch:          # manual "Run workflow" button (and external triggers)
 
 permissions:
   contents: write
 
+# Never let two scraper runs overlap — prevents the workflow racing itself.
 concurrency:
   group: scrape-leaflink
   cancel-in-progress: false
@@ -22,6 +19,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # full history so rebase/push is reliable
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -34,9 +33,9 @@ jobs:
       - name: Run scraper
         env:
           LEAFLINK_API_KEY: ${{ secrets.LEAFLINK_API_KEY }}
-          # Optional overrides (uncomment / add as repo variables if needed):
-          # LEAFLINK_ENDPOINT: '/orders-received/'
-          # LEAFLINK_PAGE_SIZE: '500'
+          LEAFLINK_BRAND: 'Chill Medicated'
+          LEAFLINK_SELLER_ID: '9105'
+          LEAFLINK_FROM_DATE: '2025-05-01'
         run: python scraper.py
 
       - name: Commit updated data
@@ -44,5 +43,21 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add sales_data.json
-          git diff --staged --quiet || git commit -m "Auto-update sales_data.json [skip ci]"
-          git push
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Auto-update sales_data.json [skip ci]"
+          # main may have moved (e.g. a manual commit, or another run) between
+          # checkout and push. Rebase our commit on top of the latest remote and
+          # retry, so the push never fails on a non-fast-forward.
+          for i in 1 2 3 4 5; do
+            if git pull --rebase --autostash origin main && git push origin HEAD:main; then
+              echo "Pushed on attempt $i."
+              exit 0
+            fi
+            echo "Push attempt $i failed (remote moved); retrying in 5s..."
+            sleep 5
+          done
+          echo "ERROR: push failed after 5 attempts."
+          exit 1
