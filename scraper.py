@@ -36,6 +36,11 @@ INCLUDE_CHILDREN = os.getenv("LEAFLINK_INCLUDE_CHILDREN", "line_items")
 
 # Keep only orders on/after this date (matched against created_on). Blank = no floor.
 FROM_DATE = os.getenv("LEAFLINK_FROM_DATE", "2025-05-01")
+
+# Restrict to one company by seller id. Medfarms - 100 Shafer Processing = 9105.
+# The App token is already scoped to a single company, but this enforces it
+# explicitly. Blank = no company filter.
+SELLER_ID = os.getenv("LEAFLINK_SELLER_ID", "9105")
 # Send the date floor to the server too (created_on__gte) to avoid pulling all
 # history. If LeafLink rejects it (400), the scraper drops it and falls back to
 # client-side filtering automatically. Set "0" to disable.
@@ -170,20 +175,27 @@ def _payment_status(o):
     return "Unpaid"
 
 
-def flatten(orders, brand_q, from_date=""):
+def flatten(orders, brand_q, from_date="", seller_id=""):
     rows = []
     seller_ids, brand_ids_seen = set(), set()
-    matched = total_lines = skipped_old = 0
+    matched = total_lines = skipped_old = skipped_company = 0
     recon_order_total = recon_net_total = recon_gross_total = 0.0
     brand_q = (brand_q or "").strip().lower()
     from_date = (from_date or "").strip()
+    seller_id = str(seller_id or "").strip()
 
     for o in orders:
         s = o.get("seller")
+        sid = s if not isinstance(s, dict) else s.get("id")
         if s is not None:
-            seller_ids.add(s if not isinstance(s, dict) else s.get("id"))
+            seller_ids.add(sid)
         for b in (o.get("brand_ids") or []):
             brand_ids_seen.add(b)
+
+        # Company filter: only Medfarms (seller id).
+        if seller_id and str(sid) != seller_id:
+            skipped_company += 1
+            continue
 
         order_date = _first(o, "created_on", "created", "order_placed_date", "date")
         if from_date:
@@ -272,6 +284,7 @@ def flatten(orders, brand_q, from_date=""):
         "seller_ids": sorted(x for x in seller_ids if x is not None),
         "brand_ids": sorted(brand_ids_seen),
         "matched": matched, "total_lines": total_lines, "skipped_old": skipped_old,
+        "skipped_company": skipped_company,
         "recon_order_total": round(recon_order_total, 2),
         "recon_net_total": round(recon_net_total, 2),
         "recon_gross_total": round(recon_gross_total, 2),
@@ -297,14 +310,15 @@ def main():
             print(json.dumps(lis[0], default=str)[:2500])
         print("--- end sample ---\n")
 
-    rows, st = flatten(orders, BRAND_FILTER, FROM_DATE)
+    rows, st = flatten(orders, BRAND_FILTER, FROM_DATE, SELLER_ID)
 
     if BRAND_FILTER.strip() and st["matched"] == 0 and st["total_lines"] > 0:
         print(f"WARNING: brand '{BRAND_FILTER}' matched 0 of {st['total_lines']} lines.")
         print("Keeping ALL rows so you still get data — check the product-name field.")
-        rows, st = flatten(orders, "", FROM_DATE)
+        rows, st = flatten(orders, "", FROM_DATE, SELLER_ID)
 
-    print(f"\nSeller id(s) in data: {st['seller_ids']}  (Medfarms expected)")
+    print(f"\nSeller id(s) seen: {st['seller_ids']}  (Medfarms = 9105)")
+    print(f"Company filter: seller {SELLER_ID or '(none)'}  ->  skipped {st['skipped_company']} other-company orders")
     print(f"Brand id(s) in data:  {st['brand_ids']}   (Chill Medicated = 2425)")
     print(f"Date floor: {FROM_DATE or '(none)'}  ->  skipped {st['skipped_old']} older orders")
     print(f"Line items: {st['total_lines']} in range -> {st['matched']} kept (brand '{BRAND_FILTER}')")
@@ -319,6 +333,7 @@ def main():
         "fetched_at": datetime.now(timezone.utc).isoformat(),
         "source": "leaflink",
         "seller_ids": st["seller_ids"],
+        "company_filter": SELLER_ID,
         "brand_filter": BRAND_FILTER,
         "from_date": FROM_DATE,
         "order_count": len(orders),
