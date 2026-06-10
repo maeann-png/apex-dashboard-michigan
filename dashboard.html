@@ -136,6 +136,9 @@ function Dashboard({data,filters,setFilters}){
     _qty: +r.quantity || 0,
     _isSample: !!r.is_sample,
     productLine: r.product_line || r.product_type || '—',
+    // City parsed from the buyer name suffix ("King of Budz - Monroe" -> "Monroe").
+    // ~98% of Michigan buyer names carry a city this way.
+    city: (() => { const n = String(r.buyer_name || ''); const m = n.split(/\s[-–]\s/); return m.length > 1 ? m[m.length - 1].trim() : ''; })(),
   })),[rows]);
 
   const distinct = useMemo(()=>({
@@ -180,6 +183,8 @@ function Dashboard({data,filters,setFilters}){
   const topProducts=useMemo(()=>groupSum('product_name'),[filtered]);
   const topBuyers=useMemo(()=>groupSum('buyer_name'),[filtered]);
   const byLine=useMemo(()=>groupSum('productLine',8),[filtered]);
+  const byCity=useMemo(()=>groupSum('city',15),[filtered]);
+  const bySalesRep=useMemo(()=>groupSum('sales_rep',20),[filtered]);
   const paymentMix=useMemo(()=>{const m={};filtered.forEach(r=>{const k=r.payment_status||'Unknown';m[k]=(m[k]||0)+r._revenue;});return Object.entries(m).map(([name,revenue])=>({name,revenue}));},[filtered]);
 
   const monthly=useMemo(()=>{
@@ -249,6 +254,20 @@ function Dashboard({data,filters,setFilters}){
     <section className="section"><div className="grid-half">
       <RankCard title="Top products" data={topProducts}/>
       <RankCard title="Top buyers" data={topBuyers}/>
+    </div></section>
+
+    <section className="section"><div className="grid-half">
+      <div>
+        <div className="section-header"><h2 className="section-title">Sales <em>by rep</em></h2><span className="section-meta">{bySalesRep.length} reps</span></div>
+        <div className="card">
+          <RankList data={bySalesRep}/>
+          {bySalesRep.length===0 && <div style={{padding:'10px 4px 0',fontFamily:'JetBrains Mono',fontSize:10,color:'#6d7058',lineHeight:1.5}}>No rep data yet — sales rep is pulled from LeafLink's customers endpoint when the scraper runs. Empty means no assigned reps were found (or the App lacks Customers read permission).</div>}
+        </div>
+      </div>
+      <div>
+        <div className="section-header"><h2 className="section-title">By <em>city</em></h2><span className="section-meta">{byCity.length} cities</span></div>
+        <div className="card"><RankList data={byCity}/></div>
+      </div>
     </div></section>
 
     <section className="section"><div className="grid-2">
