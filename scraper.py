@@ -672,6 +672,7 @@ def fetch_inventory():
     diagnostic so the field mapping can be confirmed on a real run.
     """
     inv_by_id, inv_by_sku = {}, {}
+    catalog, catalog_seen = [], set()   # full brand-matched product list (incl. never-sold)
     # Prefer the company-scoped path (small, fast, exactly Medfarms' catalog),
     # then fall back to the broad /products/ list.
     endpoints = []
@@ -703,15 +704,28 @@ def fetch_inventory():
                     sample_keys = sorted(p.keys())
                 seen += 1
                 val, f = _inv_value(p)
-                if val is None:
-                    continue
-                field_hits[f] = field_hits.get(f, 0) + 1
                 pid = p.get("id")
                 sku = str(p.get("sku") or "").strip()
-                if pid is not None:
-                    inv_by_id[str(pid)] = val
-                if sku:
-                    inv_by_sku[sku] = val
+                name = p.get("name") or ""
+                line = (p.get("product_line_name") or _name_of(p.get("product_line"))
+                        or _name_of(p.get("category")) or "")
+                if val is not None:
+                    field_hits[f] = field_hits.get(f, 0) + 1
+                    if pid is not None:
+                        inv_by_id[str(pid)] = val
+                    if sku:
+                        inv_by_sku[sku] = val
+                # Full catalog entry, filtered to the dashboard's brand (so the
+                # inventory section lists every Chill Medicated product — including
+                # ones with no sales — not other Medfarms brands).
+                brand_str = (_name_of(p.get("brand")) or _name_of(p.get("brand_name")) or name).lower()
+                if BRAND_FILTER.strip() and BRAND_FILTER.lower() not in brand_str:
+                    continue
+                ckey = str(pid) if pid is not None else sku
+                if ckey and ckey not in catalog_seen:
+                    catalog_seen.add(ckey)
+                    catalog.append({"id": str(pid) if pid is not None else "",
+                                    "sku": sku, "name": name, "line": line, "available": val})
             pages += 1
             nxt = data.get("next") if isinstance(data, dict) else None
             if not nxt:
@@ -720,10 +734,11 @@ def fetch_inventory():
         if pages >= INV_MAX_PAGES and (data.get("next") if isinstance(data, dict) else None):
             print(f"  NOTE: hit INV_MAX_PAGES={INV_MAX_PAGES} on {ep} with more pages "
                   f"remaining — raise LEAFLINK_INV_MAX_PAGES.")
-        if inv_by_id or inv_by_sku:
+        if inv_by_id or inv_by_sku or catalog:
             print(f"Inventory: matched on {ep} — {len(inv_by_id)} by id / "
                   f"{len(inv_by_sku)} by sku across {seen} product rows "
-                  f"({pages} pages, fields: {field_hits})")
+                  f"({pages} pages, fields: {field_hits}); "
+                  f"{len(catalog)} '{BRAND_FILTER}' products in catalog")
             break
         print(f"  NOTE: {ep} returned {seen} products but no recognizable inventory "
               f"field. First product keys: {sample_keys}")
@@ -731,7 +746,7 @@ def fetch_inventory():
         print("  Inventory pull found nothing — column will show '—'. "
               "Set LEAFLINK_PRODUCTS_ENDPOINTS / LEAFLINK_INV_FIELDS once the "
               "right path + field are known.")
-    return {"by_id": inv_by_id, "by_sku": inv_by_sku}
+    return {"by_id": inv_by_id, "by_sku": inv_by_sku, "catalog": catalog}
 
 
 def load_existing():
@@ -844,6 +859,7 @@ def main():
         "from_date": FROM_DATE,
         "order_count": len({str(r.get("order_uid")) for r in rows if r.get("order_uid")}),
         "row_count": len(rows),
+        "inventory": (inv or {}).get("catalog", []),
         "rows": rows,
     }
     OUTPUT_FILE.write_text(json.dumps(payload, separators=(",", ":"), default=str))
