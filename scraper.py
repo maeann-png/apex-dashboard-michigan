@@ -725,7 +725,10 @@ def fetch_inventory():
                 if ckey and ckey not in catalog_seen:
                     catalog_seen.add(ckey)
                     catalog.append({"id": str(pid) if pid is not None else "",
-                                    "sku": sku, "name": name, "line": line, "available": val})
+                                    "sku": sku, "name": name, "line": line,
+                                    "inventory": _amount(p.get("quantity")),
+                                    "reserved": _amount(p.get("reserved_qty")),
+                                    "available": val})
             pages += 1
             nxt = data.get("next") if isinstance(data, dict) else None
             if not nxt:
