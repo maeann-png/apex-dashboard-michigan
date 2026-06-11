@@ -169,7 +169,12 @@ function Dashboard({data,invCsv,filters,setFilters}){
     _revenue: +r.revenue || 0,
     _gross: +r.gross || 0,
     _discount: +r.discount || 0,
-    _units: +r.units_sold || 0,
+    // Physical units (eaches). LeafLink's `units_sold` is quantity ÷ unit_multiplier,
+    // i.e. number of cases/multiples — not physical units — so we use raw quantity
+    // here and expose cases separately. Revenue is unaffected (it's per-case price
+    // × cases, computed upstream).
+    _units: +r.quantity || 0,
+    _cases: +r.units_sold || 0,
     _qty: +r.quantity || 0,
     _isSample: !!r.is_sample,
     // product_line is blank in LeafLink for most items, so fall back to the line
