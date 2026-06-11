@@ -90,6 +90,16 @@ INV_FIELDS = [f.strip() for f in os.getenv(
 # once the right endpoint/field is confirmed. Bounded by INV_MAX_PAGES.
 PULL_INVENTORY = os.getenv("LEAFLINK_PULL_INVENTORY", "0") == "1"
 INV_MAX_PAGES = int(os.getenv("LEAFLINK_INV_MAX_PAGES", "60"))
+
+# Only keep products in these listing states (matches the LeafLink "Available"
+# export — drops Archived/Unlisted/etc., e.g. the stray 100k gummy). Field name
+# is tried across candidates since the API key isn't documented explicitly.
+LISTED_STATES = {s.strip().lower() for s in
+                 os.getenv("LEAFLINK_LISTED_STATES", "available").split(",") if s.strip()}
+STATUS_FIELDS = [f.strip() for f in os.getenv(
+    "LEAFLINK_STATUS_FIELDS",
+    "listing_state,status,product_status,state,listing_status,product_state"
+).split(",") if f.strip()]
 OUTPUT_FILE = Path(__file__).parent / "sales_data.json"
 
 
@@ -663,6 +673,15 @@ def _inv_value(p):
     return None, None
 
 
+def _product_status(p):
+    """Lowercased listing status of a product, trying candidate field names.
+    Returns ("", None) if no recognizable status field is present."""
+    for f in STATUS_FIELDS:
+        if f in p and p[f] is not None:
+            return str(_name_of(p[f]) or p[f]).strip().lower(), f
+    return "", None
+
+
 def fetch_inventory():
     """Best-effort current-inventory pull from the seller product catalog.
 
@@ -689,6 +708,7 @@ def fetch_inventory():
             print(f"  NOTE: {probe.status_code} on {ep} — skipping inventory here.")
             continue
         field_hits, sample_keys, pages, seen = {}, None, 0, 0
+        status_counts, status_field_seen = {}, None
         resp = probe  # reuse the probe as page 1
         while resp is not None and pages < INV_MAX_PAGES:
             if resp.status_code != 200:
@@ -721,11 +741,22 @@ def fetch_inventory():
                 brand_str = (_name_of(p.get("brand")) or _name_of(p.get("brand_name")) or name).lower()
                 if BRAND_FILTER.strip() and BRAND_FILTER.lower() not in brand_str:
                     continue
+                # Listing state: keep only Available-type products (matches the CSV
+                # export, drops Archived/Unlisted like the stray 100k gummy).
+                # Defensive: if NO status field is found on this product, keep it
+                # rather than risk silently dropping the whole catalog.
+                status, sf = _product_status(p)
+                status_counts[status or "(none)"] = status_counts.get(status or "(none)", 0) + 1
+                if sf is not None:
+                    status_field_seen = sf
+                if sf is not None and LISTED_STATES and status not in LISTED_STATES:
+                    continue
                 ckey = str(pid) if pid is not None else sku
                 if ckey and ckey not in catalog_seen:
                     catalog_seen.add(ckey)
                     catalog.append({"id": str(pid) if pid is not None else "",
                                     "sku": sku, "name": name, "line": line,
+                                    "status": status,
                                     "inventory": _amount(p.get("quantity")),
                                     "reserved": _amount(p.get("reserved_qty")),
                                     "available": val})
@@ -741,7 +772,14 @@ def fetch_inventory():
             print(f"Inventory: matched on {ep} — {len(inv_by_id)} by id / "
                   f"{len(inv_by_sku)} by sku across {seen} product rows "
                   f"({pages} pages, fields: {field_hits}); "
-                  f"{len(catalog)} '{BRAND_FILTER}' products in catalog")
+                  f"{len(catalog)} '{BRAND_FILTER}' products in catalog "
+                  f"(listed filter={sorted(LISTED_STATES)}; status field="
+                  f"{status_field_seen}; brand status breakdown={status_counts})")
+            if status_field_seen is None:
+                print(f"  WARNING: no listing-status field found among {STATUS_FIELDS}. "
+                      f"Catalog NOT filtered by listing state (all brand products kept). "
+                      f"First product keys: {sample_keys} — set LEAFLINK_STATUS_FIELDS "
+                      f"to the correct field name to enable Available-only filtering.")
             break
         print(f"  NOTE: {ep} returned {seen} products but no recognizable inventory "
               f"field. First product keys: {sample_keys}")
