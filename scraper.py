@@ -85,6 +85,11 @@ INV_FIELDS = [f.strip() for f in os.getenv(
     "available_quantity,quantity_on_hand,stock,on_hand"
 ).split(",") if f.strip()]
 
+# Inventory pull is OFF by default: it can be slow/huge on big catalogs and
+# must never block the orders backfill. Turn on with LEAFLINK_PULL_INVENTORY=1
+# once the right endpoint/field is confirmed. Bounded by INV_MAX_PAGES.
+PULL_INVENTORY = os.getenv("LEAFLINK_PULL_INVENTORY", "0") == "1"
+INV_MAX_PAGES = int(os.getenv("LEAFLINK_INV_MAX_PAGES", "20"))
 OUTPUT_FILE = Path(__file__).parent / "sales_data.json"
 
 
@@ -669,7 +674,10 @@ def fetch_inventory():
     inv_by_id, inv_by_sku = {}, {}
     for ep in PRODUCTS_ENDPOINTS:
         url = f"{API_BASE}{ep}"
-        probe = _get(url, {"page_size": PAGE_SIZE, "page": 1})
+        prm = {"page_size": PAGE_SIZE, "page": 1}
+        if SELLER_ID:
+            prm["seller"] = SELLER_ID
+        probe = _get(url, prm)
         if probe.status_code == 404:
             print(f"  NOTE: 404 on {ep} — trying next products endpoint.")
             continue
@@ -677,8 +685,11 @@ def fetch_inventory():
             print(f"  NOTE: {probe.status_code} on {ep} — skipping inventory here.")
             continue
         field_hits, sample_keys, page, seen = {}, None, 1, 0
-        while True:
-            r = _get(url, {"page_size": PAGE_SIZE, "page": page})
+        while page <= INV_MAX_PAGES:
+            pp = {"page_size": PAGE_SIZE, "page": page}
+            if SELLER_ID:
+                pp["seller"] = SELLER_ID
+            r = _get(url, pp)
             if r.status_code != 200:
                 break
             data = r.json()
@@ -705,6 +716,8 @@ def fetch_inventory():
                 page += 1
             else:
                 break
+        if page > INV_MAX_PAGES:
+            print(f"  NOTE: hit INV_MAX_PAGES={INV_MAX_PAGES} on {ep}; stopping inventory paging.")
         if inv_by_id or inv_by_sku:
             print(f"Inventory: matched on {ep} — {len(inv_by_id)} by id / "
                   f"{len(inv_by_sku)} by sku of {seen} products (fields: {field_hits})")
@@ -760,9 +773,15 @@ def main():
         print("  No 'managers' on customers. First customer keys: "
               f"{sorted((customers[0] or {}).keys())}")
 
-    # Current inventory from the seller product catalog (best-effort join).
-    print("Fetching current inventory from product catalog...")
-    inv = fetch_inventory()
+    # Current inventory from the seller product catalog (best-effort, bounded).
+    # OFF by default so it can never stall the orders backfill.
+    if PULL_INVENTORY:
+        print("Fetching current inventory from product catalog...")
+        inv = fetch_inventory()
+    else:
+        print("Inventory pull SKIPPED (set LEAFLINK_PULL_INVENTORY=1 to enable). "
+              "Current Inv. column will show '—'.")
+        inv = {"by_id": {}, "by_sku": {}}
 
     if orders:
         first = orders[0]
