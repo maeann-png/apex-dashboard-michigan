@@ -18,7 +18,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -46,6 +46,13 @@ INCLUDE_CHILDREN = os.getenv("LEAFLINK_INCLUDE_CHILDREN", "line_items")
 # Keep only orders on/after this date (matched against created_on). Blank = no floor.
 # Set low to pull ALL historical data from the start (MI adult-use began Dec 2019).
 FROM_DATE = os.getenv("LEAFLINK_FROM_DATE", "2020-01-01")
+
+# Incremental mode. When > 0 AND the committed data was already backfilled at the
+# current FROM_DATE, each run pulls only the last N days and MERGES into the
+# existing sales_data.json instead of re-scanning all history. This makes the
+# scheduled (every-15-min) runs fast. The very first run (or any run where the
+# committed data isn't yet backfilled at FROM_DATE) does a one-time FULL pull.
+INCREMENTAL_DAYS = int(os.getenv("LEAFLINK_INCREMENTAL_DAYS", "0"))
 
 # Restrict to one company by seller id. Medfarms - 100 Shafer Processing = 9105.
 # The App token is already scoped to a single company, but this enforces it
@@ -173,12 +180,12 @@ def _fetch_window(gte, lt):
     return out, reported
 
 
-def fetch_all() -> list:
+def fetch_all(start_override: str = "") -> list:
     if not API_KEY:
         print("ERROR: LEAFLINK_API_KEY is empty.")
         sys.exit(1)
     today = datetime.now().strftime("%Y-%m-%d")
-    start = FROM_DATE or "2020-01-01"
+    start = start_override or FROM_DATE or "2020-01-01"
     windows = _month_windows(start, today)
     print(f"Pulling {len(windows)} monthly windows ({start} .. {today})")
     seen, orders = set(), []
@@ -711,10 +718,34 @@ def fetch_inventory():
     return {"by_id": inv_by_id, "by_sku": inv_by_sku}
 
 
+def load_existing():
+    """Return (rows, from_date) from the committed sales_data.json, or ([], "")."""
+    if OUTPUT_FILE.exists():
+        try:
+            d = json.loads(OUTPUT_FILE.read_text())
+            return d.get("rows", []) or [], d.get("from_date", "") or ""
+        except Exception as e:
+            print(f"  NOTE: could not read existing {OUTPUT_FILE.name} ({e}); full pull.")
+    return [], ""
+
+
 def main():
-    print(f"Pulling {ENDPOINT} from {API_BASE}"
-          + (f"  (created_on__gte={FROM_DATE})" if (SERVER_DATE_FILTER and FROM_DATE) else ""))
-    orders = fetch_all()
+    # Full vs incremental. Incremental only when enabled AND the committed data was
+    # already backfilled at this FROM_DATE, so we never silently skip history.
+    existing_rows, existing_from = load_existing()
+    incremental = (INCREMENTAL_DAYS > 0 and bool(existing_rows) and existing_from == FROM_DATE)
+    if incremental:
+        inc_start = (datetime.now() - timedelta(days=INCREMENTAL_DAYS)).strftime("%Y-%m-%d")
+        pull_start = max(inc_start, FROM_DATE)
+        print(f"INCREMENTAL run: pulling {pull_start} .. today, "
+              f"merging into {len(existing_rows)} existing rows (last {INCREMENTAL_DAYS} days).")
+        orders = fetch_all(start_override=pull_start)
+    else:
+        why = ("incremental disabled (LEAFLINK_INCREMENTAL_DAYS=0)" if INCREMENTAL_DAYS <= 0
+               else "no existing data yet" if not existing_rows
+               else f"existing data backfilled at '{existing_from}', need '{FROM_DATE}' — backfilling")
+        print(f"FULL pull ({why}).")
+        orders = fetch_all()
     print(f"Fetched {len(orders)} orders.")
 
     # Enrich with sales rep (and state/license when available) from customers.
@@ -751,6 +782,22 @@ def main():
         print("Keeping ALL rows so you still get data — check the product-name field.")
         rows, st = flatten(orders, "", FROM_DATE, SELLER_ID, enrich, inv)
 
+    if incremental:
+        fresh_uids = {str(o.get("number") or o.get("id")) for o in orders}
+        kept = [r for r in existing_rows if str(r.get("order_uid")) not in fresh_uids]
+        # Refresh current inventory on the kept (older) rows too, joined by sku,
+        # so the Current Inv. column stays current for products not sold recently.
+        by_sku = (inv or {}).get("by_sku", {})
+        if by_sku:
+            for r in kept:
+                s = r.get("product_sku")
+                if s and s in by_sku:
+                    r["current_inventory"] = by_sku[s]
+        fresh_n = len(rows)
+        rows = kept + rows
+        print(f"MERGED: {len(kept)} older rows kept + {fresh_n} fresh = {len(rows)} total "
+              f"(replaced {len(existing_rows) - len(kept)} rows for {len(fresh_uids)} window orders).")
+
     print(f"\nSeller id(s) seen: {st['seller_ids']}  (Medfarms = 9105)")
     print(f"Company filter: seller {SELLER_ID or '(none)'}  ->  skipped {st['skipped_company']} other-company orders")
     print(f"Status filter: excluded {EXCLUDE_STATUSES or '(none)'}  ->  skipped {st['skipped_status']} orders")
@@ -773,7 +820,7 @@ def main():
         "company_filter": SELLER_ID,
         "brand_filter": BRAND_FILTER,
         "from_date": FROM_DATE,
-        "order_count": len(orders),
+        "order_count": len({str(r.get("order_uid")) for r in rows if r.get("order_uid")}),
         "row_count": len(rows),
         "rows": rows,
     }
