@@ -141,6 +141,8 @@ function Dashboard({data,filters,setFilters}){
     // City: use the real customer city from the scraper (buyer_city) when present,
     // else parse it from the buyer-name suffix ("King of Budz - Monroe" -> "Monroe").
     city: (() => { const real = String(r.buyer_city || '').trim(); if (real) return real; const n = String(r.buyer_name || ''); const m = n.split(/\s[-–]\s/); return m.length > 1 ? m[m.length - 1].trim() : ''; })(),
+    // High-level category derived from the product name (topical vs ingestible).
+    category: (()=>{const n=String(r.product_name||'').toLowerCase(); if(/\b(rub|lotion|roll-?on|balm|salve|cream|topical|body)\b/.test(n)) return 'Topicals & Wellness'; if(/(syrup|tincture|medicated|to-?go|zero sugar|drink|shot|beverage|sublingual)/.test(n)) return 'Tinctures'; if(n.includes('cbd')) return 'CBD'; return 'Other';})(),
   })),[rows]);
 
   const distinct = useMemo(()=>({
@@ -185,6 +187,7 @@ function Dashboard({data,filters,setFilters}){
   const topProducts=useMemo(()=>groupSum('product_name'),[filtered]);
   const topBuyers=useMemo(()=>groupSum('buyer_name'),[filtered]);
   const byLine=useMemo(()=>groupSum('productLine',8),[filtered]);
+  const byCategory=useMemo(()=>groupSum('category',8),[filtered]);
   const byCity=useMemo(()=>{
     // Locked to these 10 Michigan cities. Matching ignores case/spacing/punctuation
     // so "Center Line" / "centerline" both land in the same bucket.
@@ -287,12 +290,12 @@ function Dashboard({data,filters,setFilters}){
         <div className="card"><RankList data={byLine}/></div>
       </div>
       <div>
-        <div className="section-header"><h2 className="section-title">Payment <em>status</em></h2><span className="section-meta">AR mix</span></div>
+        <div className="section-header"><h2 className="section-title">By <em>category</em></h2><span className="section-meta">mix</span></div>
         <div className="card" style={{height:300,display:'flex',alignItems:'center',justifyContent:'center'}}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
-              <Pie data={paymentMix} dataKey="revenue" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={95} paddingAngle={2} stroke="#13140d" strokeWidth={2}>
-                {paymentMix.map((e,i)=>{const c={'Paid':'#e8d838','Unpaid':'#8fb8d4','Overdue':'#e07594'};return <Cell key={i} fill={c[e.name]||'#8fb8d4'}/>;})}
+              <Pie data={byCategory} dataKey="revenue" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={95} paddingAngle={2} stroke="#13140d" strokeWidth={2}>
+                {byCategory.map((e,i)=>{const colors=['#e8d838','#8fb8d4','#c4b840','#a8ad8f','#e07594'];return <Cell key={i} fill={colors[i%colors.length]}/>;})}
               </Pie>
               <Tooltip contentStyle={{background:'#1c1d14',border:'1px solid #383b22',borderRadius:4,fontSize:12}} formatter={(v)=>fmtMoneyFull(v)}/>
               <Legend verticalAlign="bottom" iconType="square" wrapperStyle={{fontSize:11,fontFamily:'JetBrains Mono',color:'#a8ad8f'}}/>
@@ -301,6 +304,12 @@ function Dashboard({data,filters,setFilters}){
         </div>
       </div>
     </div></section>
+
+    <section className="section">
+      <div className="section-header"><h2 className="section-title">Payment <em>status</em></h2><span className="section-meta">AR mix</span></div>
+      <div className="card"><RankList data={paymentMix}/></div>
+    </section>
+
 
     <section className="section">
       <div className="section-header"><h2 className="section-title">Monthly <em>breakdown</em></h2><span className="section-meta">{monthly.length} months</span></div>
