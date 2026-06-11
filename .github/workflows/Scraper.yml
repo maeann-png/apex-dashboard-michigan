@@ -31,6 +31,7 @@ jobs:
           LEAFLINK_SELLER_ID: '9105'
           LEAFLINK_FROM_DATE: '2020-01-01'        # full history floor
           LEAFLINK_INCREMENTAL_DAYS: '60'         # after backfill, each run pulls only last 60 days + merges
+          LEAFLINK_PULL_INVENTORY: '1'            # pull current inventory from /companies/9105/products/
         run: python scraper.py
       - name: Commit updated data
         run: |
