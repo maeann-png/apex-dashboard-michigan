@@ -44,7 +44,8 @@ BRAND_FILTER = os.getenv("LEAFLINK_BRAND", "Chill Medicated")
 INCLUDE_CHILDREN = os.getenv("LEAFLINK_INCLUDE_CHILDREN", "line_items")
 
 # Keep only orders on/after this date (matched against created_on). Blank = no floor.
-FROM_DATE = os.getenv("LEAFLINK_FROM_DATE", "2025-05-01")
+# Set low to pull ALL historical data from the start (MI adult-use began Dec 2019).
+FROM_DATE = os.getenv("LEAFLINK_FROM_DATE", "2020-01-01")
 
 # Restrict to one company by seller id. Medfarms - 100 Shafer Processing = 9105.
 # The App token is already scoped to a single company, but this enforces it
@@ -62,6 +63,20 @@ SERVER_DATE_FILTER = os.getenv("LEAFLINK_SERVER_DATE_FILTER", "1") != "0"
 
 PAGE_SIZE = int(os.getenv("LEAFLINK_PAGE_SIZE", "500"))
 MAX_PAGES = int(os.getenv("LEAFLINK_MAX_PAGES", "0"))
+
+# Current inventory isn't in the orders feed — it lives in the seller's product
+# catalog. We pull it once and join by product id / sku. Endpoints tried in order;
+# inventory field names tried in order (first non-null wins). Both best-effort.
+PRODUCTS_ENDPOINTS = [e.strip() for e in os.getenv(
+    "LEAFLINK_PRODUCTS_ENDPOINTS",
+    "/api/v2/products/,/api/v2/products-received/,/api/v2/seller-products/"
+).split(",") if e.strip()]
+INV_FIELDS = [f.strip() for f in os.getenv(
+    "LEAFLINK_INV_FIELDS",
+    "available_inventory,shelf_inventory,inventory,quantity_available,available,"
+    "available_case_quantity,available_unit_quantity,inventory_amount,"
+    "available_quantity,quantity_on_hand,stock,on_hand"
+).split(",") if f.strip()]
 
 OUTPUT_FILE = Path(__file__).parent / "sales_data.json"
 
@@ -163,7 +178,7 @@ def fetch_all() -> list:
         print("ERROR: LEAFLINK_API_KEY is empty.")
         sys.exit(1)
     today = datetime.now().strftime("%Y-%m-%d")
-    start = FROM_DATE or "2025-05-01"
+    start = FROM_DATE or "2020-01-01"
     windows = _month_windows(start, today)
     print(f"Pulling {len(windows)} monthly windows ({start} .. {today})")
     seen, orders = set(), []
@@ -474,12 +489,14 @@ def _order_customer_keys(o):
     return cid, nm
 
 
-def flatten(orders, brand_q, from_date="", seller_id="", enrich=None):
+def flatten(orders, brand_q, from_date="", seller_id="", enrich=None, inv=None):
     enrich = enrich or {}
     rep_by_id = enrich.get("rep_by_id", {}); rep_by_name = enrich.get("rep_by_name", {})
     state_by_id = enrich.get("state_by_id", {}); state_by_name = enrich.get("state_by_name", {})
     lic_by_id = enrich.get("lic_by_id", {}); lic_by_name = enrich.get("lic_by_name", {})
     city_by_id = enrich.get("city_by_id", {}); city_by_name = enrich.get("city_by_name", {})
+    inv = inv or {}
+    inv_by_id = inv.get("by_id", {}); inv_by_sku = inv.get("by_sku", {})
     rows = []
     seller_ids, brand_ids_seen = set(), set()
     matched = total_lines = skipped_old = skipped_company = skipped_status = 0
@@ -583,12 +600,19 @@ def flatten(orders, brand_q, from_date="", seller_id="", enrich=None):
                 continue
             matched += 1
             net = gross * scale
+            _pid = li.get("product")
+            _pid = str(_pid) if _pid is not None else (str(prod.get("id")) if prod.get("id") is not None else "")
+            _sku = prod.get("sku") or ""
+            _cur_inv = (inv_by_id.get(_pid) if _pid else None)
+            if _cur_inv is None and _sku:
+                _cur_inv = inv_by_sku.get(_sku)
             rows.append({
                 **common,
                 "brand": (_name_of(prod.get("brand")) or _name_of(prod.get("brand_name"))
                           or (BRAND_FILTER if brand_q else "")),
                 "product_name": pname,
                 "product_sku": prod.get("sku") or "",
+                "current_inventory": _cur_inv,
                 "product_line": prod.get("product_line_name") or "",
                 "product_category": _name_of(prod.get("category")) or prod.get("product_line_name") or "",
                 "product_type": prod.get("product_line_name") or "",
@@ -617,6 +641,76 @@ def flatten(orders, brand_q, from_date="", seller_id="", enrich=None):
 
 
 # ----------------------------------------------------------------------------
+def _inv_value(p):
+    """First recognizable inventory field on a product row -> (value, field)."""
+    for f in INV_FIELDS:
+        if f in p and p[f] is not None:
+            v = _amount(p[f])
+            if v is not None:
+                return v, f
+    return None, None
+
+
+def fetch_inventory():
+    """Best-effort current-inventory pull from the seller product catalog.
+
+    Returns {"by_id": {product_id: qty}, "by_sku": {sku: qty}}. Any failure
+    (404 / wrong field / no permission) leaves the maps empty and the dashboard
+    column simply shows '—'. Mirrors the rep-enrichment approach: defensive +
+    diagnostic so the field mapping can be confirmed on a real run.
+    """
+    inv_by_id, inv_by_sku = {}, {}
+    for ep in PRODUCTS_ENDPOINTS:
+        url = f"{API_BASE}{ep}"
+        probe = _get(url, {"page_size": PAGE_SIZE, "page": 1})
+        if probe.status_code == 404:
+            print(f"  NOTE: 404 on {ep} — trying next products endpoint.")
+            continue
+        if probe.status_code != 200:
+            print(f"  NOTE: {probe.status_code} on {ep} — skipping inventory here.")
+            continue
+        field_hits, sample_keys, page, seen = {}, None, 1, 0
+        while True:
+            r = _get(url, {"page_size": PAGE_SIZE, "page": page})
+            if r.status_code != 200:
+                break
+            data = r.json()
+            items = data.get("results") if isinstance(data, dict) else data
+            if not items:
+                break
+            for p in items:
+                if not isinstance(p, dict):
+                    continue
+                if sample_keys is None:
+                    sample_keys = sorted(p.keys())
+                seen += 1
+                val, f = _inv_value(p)
+                if val is None:
+                    continue
+                field_hits[f] = field_hits.get(f, 0) + 1
+                pid = p.get("id")
+                sku = str(p.get("sku") or "").strip()
+                if pid is not None:
+                    inv_by_id[str(pid)] = val
+                if sku:
+                    inv_by_sku[sku] = val
+            if isinstance(data, dict) and data.get("next"):
+                page += 1
+            else:
+                break
+        if inv_by_id or inv_by_sku:
+            print(f"Inventory: matched on {ep} — {len(inv_by_id)} by id / "
+                  f"{len(inv_by_sku)} by sku of {seen} products (fields: {field_hits})")
+            break
+        print(f"  NOTE: {ep} returned {seen} products but no recognizable inventory "
+              f"field. First product keys: {sample_keys}")
+    if not inv_by_id and not inv_by_sku:
+        print("  Inventory pull found nothing — column will show '—'. "
+              "Set LEAFLINK_PRODUCTS_ENDPOINTS / LEAFLINK_INV_FIELDS once the "
+              "right path + field are known.")
+    return {"by_id": inv_by_id, "by_sku": inv_by_sku}
+
+
 def main():
     print(f"Pulling {ENDPOINT} from {API_BASE}"
           + (f"  (created_on__gte={FROM_DATE})" if (SERVER_DATE_FILTER and FROM_DATE) else ""))
@@ -635,6 +729,10 @@ def main():
         print("  No 'managers' on customers. First customer keys: "
               f"{sorted((customers[0] or {}).keys())}")
 
+    # Current inventory from the seller product catalog (best-effort join).
+    print("Fetching current inventory from product catalog...")
+    inv = fetch_inventory()
+
     if orders:
         first = orders[0]
         order_lite = {k: v for k, v in first.items() if k not in ("line_items", "lineitems")}
@@ -646,12 +744,12 @@ def main():
             print(json.dumps(lis[0], default=str)[:2500])
         print("--- end sample ---\n")
 
-    rows, st = flatten(orders, BRAND_FILTER, FROM_DATE, SELLER_ID, enrich)
+    rows, st = flatten(orders, BRAND_FILTER, FROM_DATE, SELLER_ID, enrich, inv)
 
     if BRAND_FILTER.strip() and st["matched"] == 0 and st["total_lines"] > 0:
         print(f"WARNING: brand '{BRAND_FILTER}' matched 0 of {st['total_lines']} lines.")
         print("Keeping ALL rows so you still get data — check the product-name field.")
-        rows, st = flatten(orders, "", FROM_DATE, SELLER_ID, enrich)
+        rows, st = flatten(orders, "", FROM_DATE, SELLER_ID, enrich, inv)
 
     print(f"\nSeller id(s) seen: {st['seller_ids']}  (Medfarms = 9105)")
     print(f"Company filter: seller {SELLER_ID or '(none)'}  ->  skipped {st['skipped_company']} other-company orders")
